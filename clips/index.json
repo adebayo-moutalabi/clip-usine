@@ -1,0 +1,38 @@
+[
+ {
+  "id": "0008-clip_01",
+  "run": 8,
+  "created": "2026-11-16T13:47:55+00:00",
+  "title": "Il saute du pont en voiture",
+  "source": "test",
+  "duration": 30.0,
+  "layout": "flou",
+  "style": "dynamique",
+  "extraits": 1,
+  "sous_titres": 0
+ },
+ {
+  "id": "0005-clip_01",
+  "run": 5,
+  "created": "2026-11-16T11:56:19+00:00",
+  "title": "",
+  "source": "test",
+  "duration": 30.0,
+  "layout": "flou",
+  "style": "dynamique",
+  "extraits": 1,
+  "sous_titres": 0
+ },
+ {
+  "id": "0004-clip_01",
+  "run": 4,
+  "created": "2026-11-16T11:51:19+00:00",
+  "title": "Il saute du pont en voiture",
+  "source": "test",
+  "duration": 17.7,
+  "layout": "flou",
+  "style": "dynamique",
+  "extraits": 2,
+  "sous_titres": 21
+ }
+]

@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clip Usine — studio de shorts</title>
+<style>
+  :root {
+    --bg:#0b0d12; --panel:#13161d; --panel2:#191d26; --line:#252a35; --line2:#323847;
+    --txt:#eef1f6; --mut:#8d96a8; --acc:#ffb020; --acc2:#ff7a1a; --ok:#35d39a; --warn:#ffcc4d; --bad:#ff6b6b;
+    --r:14px;
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:radial-gradient(1200px 500px at 50% -200px, #2a1d08 0%, var(--bg) 60%); color:var(--txt);
+         font:16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; min-height:100vh; }
+  main { max-width:880px; margin:0 auto; padding:20px 16px 80px; }
+  a { color:var(--acc); }
+  button { font:inherit; color:inherit; cursor:pointer; }
+  [hidden] { display:none !important; }
+
+  /* en-tête */
+  header { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .logo { width:38px; height:38px; border-radius:11px; background:linear-gradient(135deg,var(--acc),var(--acc2)); display:grid; place-items:center; color:#1b1100; font-weight:900; font-size:1.1rem; }
+  header h1 { font-size:1.25rem; margin:0; letter-spacing:-.01em; }
+  header p { margin:0; color:var(--mut); font-size:.85rem; }
+  .chip { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:.82rem; color:var(--mut); background:var(--panel); border:1px solid var(--line); border-radius:99px; padding:6px 12px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--bad); }
+  .chip.on .dot { background:var(--ok); }
+  .linkbtn { background:none; border:0; color:var(--acc); padding:0; font-size:.82rem; text-decoration:underline; }
+
+  /* onglets */
+  nav { display:flex; gap:4px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:4px; margin-bottom:16px; }
+  nav button { flex:1; white-space:nowrap; background:none; border:0; border-radius:9px; padding:9px 6px; color:var(--mut); font-weight:600; font-size:.92rem; }
+  nav button[aria-selected="true"] { background:var(--panel2); color:var(--txt); box-shadow:inset 0 0 0 1px var(--line2); }
+  .count { display:inline-block; min-width:20px; padding:0 6px; margin-left:4px; border-radius:99px; background:var(--acc); color:#1b1100; font-size:.72rem; line-height:18px; }
+  section.tab { display:none; } section.tab.on { display:block; }
+
+  /* cartes */
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:18px; margin-bottom:14px; }
+  .card h2 { font-size:1rem; margin:0 0 4px; }
+  .card .lead { color:var(--mut); font-size:.9rem; margin:0 0 14px; }
+  label.f { display:block; font-size:.82rem; font-weight:600; color:var(--mut); margin:14px 0 6px; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    width:100%; background:#0d1016; color:var(--txt); border:1px solid var(--line2); border-radius:10px; padding:11px 12px; font:inherit; outline:none; }
+  input:focus, select:focus, textarea:focus { border-color:var(--acc); box-shadow:0 0 0 3px rgba(255,176,32,.15); }
+  .big input { font-size:1.05rem; padding:14px 14px; }
+
+  /* source détectée */
+  .source { display:flex; gap:10px; align-items:flex-start; margin-top:10px; padding:10px 12px; border-radius:10px; font-size:.88rem; background:#0d1016; border:1px solid var(--line); }
+  .source b { white-space:nowrap; }
+  .source.ok { border-color:rgba(53,211,154,.4); } .source.ok b { color:var(--ok); }
+  .source.warn { border-color:rgba(255,204,77,.45); } .source.warn b { color:var(--warn); }
+  .source.bad { border-color:rgba(255,107,107,.45); } .source.bad b { color:var(--bad); }
+
+  /* choix en tuiles */
+  .seg { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .tile { text-align:left; background:#0d1016; border:1px solid var(--line2); border-radius:12px; padding:12px; }
+  .tile b { display:block; font-size:.93rem; }
+  .tile span { display:block; font-size:.78rem; color:var(--mut); margin-top:2px; line-height:1.35; }
+  .tile.on { border-color:var(--acc); background:rgba(255,176,32,.07); }
+  .tile .ic { font-size:1.2rem; display:block; margin-bottom:4px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .layouts { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .lay { background:#0d1016; border:1px solid var(--line2); border-radius:12px; padding:10px; text-align:center; font-size:.8rem; color:var(--mut); }
+  .lay.on { border-color:var(--acc); color:var(--txt); }
+  .phone { width:34px; height:58px; margin:0 auto 6px; border-radius:6px; border:2px solid var(--line2); position:relative; overflow:hidden; background:#222; }
+  .lay.on .phone { border-color:var(--acc); }
+  .phone i { position:absolute; left:0; right:0; }
+  .p-flou i:nth-child(1) { top:0; bottom:0; background:#3a3f4c; filter:blur(1px); }
+  .p-flou i:nth-child(2) { top:20px; height:16px; background:#8a6a2a; }
+  .p-zoom i { top:0; bottom:0; background:#8a6a2a; }
+  .p-cam i:nth-child(1) { top:0; height:22px; background:#4a6aa0; }
+  .p-cam i:nth-child(2) { top:22px; bottom:0; background:#8a6a2a; }
+  .toggle { display:flex; align-items:center; gap:12px; margin-top:14px; padding:12px; border-radius:10px; background:#0d1016; border:1px solid var(--line); cursor:pointer; }
+  .toggle input { width:18px; height:18px; accent-color:var(--acc); }
+  .toggle small { display:block; color:var(--mut); }
+  details.more { margin-top:14px; }
+  details.more summary { cursor:pointer; color:var(--mut); font-size:.88rem; font-weight:600; list-style:none; }
+  details.more summary::before { content:"▸ "; } details.more[open] summary::before { content:"▾ "; }
+
+  .go { width:100%; margin-top:16px; padding:15px; border:0; border-radius:12px; font-weight:800; font-size:1.05rem; color:#1b1100;
+        background:linear-gradient(135deg,var(--acc),var(--acc2)); box-shadow:0 8px 24px rgba(255,140,30,.25); }
+  .go:disabled { opacity:.55; cursor:not-allowed; box-shadow:none; }
+  .btn { background:var(--panel2); border:1px solid var(--line2); border-radius:10px; padding:9px 14px; font-weight:600; font-size:.9rem; text-decoration:none; color:var(--txt); display:inline-flex; align-items:center; gap:6px; }
+  .btn.primary { background:var(--acc); border-color:var(--acc); color:#1b1100; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+
+  /* progression */
+  .steps { list-style:none; padding:0; margin:14px 0 0; display:grid; gap:10px; }
+  .steps li { display:flex; gap:12px; align-items:center; color:var(--mut); }
+  .steps li .b { width:26px; height:26px; border-radius:50%; border:2px solid var(--line2); display:grid; place-items:center; font-size:.8rem; flex:none; }
+  .steps li.now { color:var(--txt); font-weight:600; } .steps li.now .b { border-color:var(--acc); }
+  .steps li.now .b::after { content:""; width:10px; height:10px; border-radius:50%; background:var(--acc); animation:pulse 1s infinite alternate; }
+  .steps li.done { color:var(--txt); } .steps li.done .b { border-color:var(--ok); background:var(--ok); color:#06210f; }
+  .steps li.done .b::after { content:"✓"; font-weight:900; }
+  @keyframes pulse { from { opacity:.3; transform:scale(.7);} to { opacity:1; transform:scale(1);} }
+  .timer { font-variant-numeric:tabular-nums; color:var(--mut); font-size:.88rem; }
+  .msg { margin-top:12px; padding:12px 14px; border-radius:10px; font-size:.92rem; }
+  .msg.bad { background:rgba(255,107,107,.08); border:1px solid rgba(255,107,107,.35); }
+  .msg.ok { background:rgba(53,211,154,.08); border:1px solid rgba(53,211,154,.35); }
+
+  /* résultat et galerie */
+  .result { display:grid; grid-template-columns:220px 1fr; gap:16px; align-items:start; margin-top:14px; }
+  video { width:100%; aspect-ratio:9/16; background:#000; border-radius:12px; display:block; }
+  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; }
+  .clip { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:10px; }
+  .clip h3 { font-size:.92rem; margin:10px 2px 2px; }
+  .clip p { margin:0 2px 10px; font-size:.78rem; color:var(--mut); }
+  .clip .row .btn { padding:7px 10px; font-size:.82rem; }
+  .empty { text-align:center; padding:40px 20px; color:var(--mut); }
+
+  /* aide & tableaux */
+  ol.how { padding-left:20px; margin:8px 0 0; } ol.how li { margin:6px 0; }
+  code { background:#0d1016; border:1px solid var(--line); border-radius:6px; padding:1px 6px; font-size:.86em; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  th, td { text-align:left; padding:9px 6px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:600; font-size:.75rem; text-transform:uppercase; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .bignum { font-size:2rem; font-weight:800; color:var(--acc); }
+  .mut { color:var(--mut); } .small { font-size:.85rem; }
+
+  @media (max-width:640px) {
+    .seg { grid-template-columns:1fr 1fr; }
+    .grid2, .result { grid-template-columns:1fr; }
+    .result video { max-width:260px; margin:0 auto; }
+    header p { display:none; }
+    nav button { font-size:.85rem; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo">C</div>
+    <div><h1>Clip Usine</h1><p>Un lien, un clic, un short monté.</p></div>
+    <div class="chip" id="chip"><span class="dot"></span><span id="chipTxt">Non connecté</span>
+      <button class="linkbtn" id="logout" type="button" hidden>Déconnecter</button></div>
+  </header>
+
+  <nav>
+    <button data-tab="studio" aria-selected="true">Créer</button>
+    <button data-tab="clips" aria-selected="false">Mes clips <span class="count" id="nClips" hidden>0</span></button>
+    <button data-tab="outils" aria-selected="false">Outils</button>
+    <button data-tab="aide" aria-selected="false">Aide</button>
+  </nav>
+
+  <!-- ===================== CRÉER ===================== -->
+  <section class="tab on" id="studio">
+
+    <!-- connexion : affichée seulement tant que la clé manque -->
+    <div class="card" id="connect" hidden>
+      <h2>Connecte ton studio (une seule fois)</h2>
+      <p class="lead">La clé permet à cette page de lancer le montage sur ton compte GitHub. Elle reste sur cet appareil.</p>
+      <ol class="how small">
+        <li>Ouvre <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">la page de création de clé</a> (connecté à GitHub).</li>
+        <li>Nom : <b>clip-usine</b> · Repository access : <b>Only select repositories</b> → <b>clip-usine</b>.</li>
+        <li>Permissions → Repository permissions → <b>Actions : Read and write</b>. Puis « Generate token ».</li>
+      </ol>
+      <label class="f" for="key">Colle la clé ici (elle commence par github_pat_)</label>
+      <div class="row"><input id="key" type="password" autocomplete="off" placeholder="github_pat_…" style="flex:1;min-width:220px">
+        <button class="btn primary" id="saveKey" type="button">Connecter</button></div>
+      <div id="keyMsg"></div>
+    </div>
+
+    <!-- formulaire -->
+    <div class="card" id="form">
+      <h2>1 · La vidéo</h2>
+      <div class="big"><input id="url" type="text" inputmode="url" placeholder="Colle un lien Twitch, Kick, Google Drive…" autocomplete="off"></div>
+      <div id="source" class="source" hidden></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="useTest" type="button">Essayer avec la vidéo de test</button></div>
+
+      <label class="f" for="titre">Titre d'accroche <span class="mut">(facultatif, 6 mots max)</span></label>
+      <input id="titre" type="text" maxlength="60" placeholder="Il rate TOUT le braquage">
+
+      <h2 style="margin-top:22px">2 · Que fabriquer ?</h2>
+      <div class="seg" id="modes">
+        <button type="button" class="tile on" data-mode="entier"><span class="ic">▶</span><b>Clip entier</b><span>Le lien est déjà court</span></button>
+        <button type="button" class="tile" data-mode="extrait"><span class="ic">✂</span><b>Un extrait</b><span>Je choisis début et fin</span></button>
+        <button type="button" class="tile" data-mode="auto"><span class="ic">⚡</span><b>Temps forts</b><span>Un clip par moment fort</span></button>
+        <button type="button" class="tile" data-mode="montage"><span class="ic">★</span><b>Best-of</b><span>Moments forts en un clip</span></button>
+      </div>
+      <div class="grid2" id="optExtrait" hidden>
+        <div><label class="f" for="debut">Début</label><input id="debut" type="text" placeholder="ex. 1:02:30"></div>
+        <div><label class="f" for="fin">Fin</label><input id="fin" type="text" placeholder="ex. 1:03:10"></div>
+      </div>
+      <div id="optAuto" hidden><label class="f" for="nAuto">Nombre de moments forts</label>
+        <select id="nAuto"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>8</option></select></div>
+
+      <h2 style="margin-top:22px">3 · Le rendu</h2>
+      <div class="seg" id="styles" style="grid-template-columns:repeat(3,1fr)">
+        <button type="button" class="tile on" data-style="dynamique"><b>Dynamique</b><span>Zooms, mot surligné, barre</span></button>
+        <button type="button" class="tile" data-style="simple"><b>Simple</b><span>Sous-titres sobres</span></button>
+        <button type="button" class="tile" data-style="brut"><b>Brut</b><span>Aucun texte auto</span></button>
+      </div>
+      <label class="f">Cadrage</label>
+      <div class="layouts" id="layouts">
+        <button type="button" class="lay on" data-layout="flou"><div class="phone p-flou"><i></i><i></i></div>Fond flouté</button>
+        <button type="button" class="lay" data-layout="zoom"><div class="phone p-zoom"><i></i></div>Plein écran</button>
+        <button type="button" class="lay" data-layout="cam"><div class="phone p-cam"><i></i><i></i></div>Facecam + jeu</button>
+      </div>
+      <div id="optCam" hidden><label class="f" for="camPos">Où est la caméra du streamer dans sa vidéo ?</label>
+        <select id="camPos"><option value="cam-hg">En haut à gauche</option><option value="cam-hd">En haut à droite</option><option value="cam-bg">En bas à gauche</option><option value="cam-bd">En bas à droite</option></select></div>
+
+      <label class="toggle"><input id="pub" type="checkbox"><div><b>Clip rémunéré</b><small>Ajoute « Partenariat rémunéré » au début, exigé par les campagnes</small></div></label>
+
+      <button class="go" id="go" type="button">Fabriquer le clip</button>
+      <p class="mut small" style="text-align:center;margin:8px 0 0">Compte 3 à 8 minutes. Tu peux changer d'onglet, le suivi continue.</p>
+    </div>
+
+    <!-- suivi -->
+    <div class="card" id="track" hidden>
+      <div class="row" style="justify-content:space-between"><h2 id="trackTitle">Fabrication en cours</h2><span class="timer" id="timer">0:00</span></div>
+      <ol class="steps" id="steps">
+        <li data-s="send"><span class="b"></span>Demande envoyée</li>
+        <li data-s="queue"><span class="b"></span>Serveur de montage démarré</li>
+        <li data-s="build"><span class="b"></span>Téléchargement, montage, sous-titres</li>
+        <li data-s="pub"><span class="b"></span>Mise en ligne</li>
+      </ol>
+      <div id="trackMsg"></div>
+      <div id="result"></div>
+      <div class="row" style="margin-top:14px"><button class="btn" id="again" type="button" hidden>Fabriquer un autre clip</button></div>
+    </div>
+  </section>
+
+  <!-- ===================== MES CLIPS ===================== -->
+  <section class="tab" id="clips">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <span class="mut small" id="clipInfo"></span><button class="btn" id="reload" type="button">Actualiser</button></div>
+    <div class="gallery" id="gallery"></div>
+    <div class="empty card" id="noClips" hidden>Aucun clip pour l'instant.<br>Va dans « Créer » et essaie la vidéo de test.</div>
+  </section>
+
+  <!-- ===================== OUTILS ===================== -->
+  <section class="tab" id="outils">
+    <div class="card">
+      <h2>Calculateur de gains</h2>
+      <p class="lead">Combien rapporte un clip dans une campagne payée à la vue.</p>
+      <div class="grid2">
+        <div><label class="f" for="cViews">Vues du clip</label><input id="cViews" type="number" min="0" value="20000"></div>
+        <div><label class="f" for="cRate">Tarif pour 1 000 vues</label><input id="cRate" type="number" min="0" step="0.05" value="0.70"></div>
+        <div><label class="f" for="cCap">Plafond par clip</label><input id="cCap" type="number" min="0" value="35"></div>
+        <div><label class="f" for="cFee">Commission de la plateforme (%)</label><input id="cFee" type="number" min="0" max="100" value="10"></div>
+      </div>
+      <p class="mut small" style="margin:16px 0 0">Tu touches environ</p><div class="bignum" id="cOut">—</div><p class="mut small" id="cNote"></p>
+    </div>
+    <div class="card" id="radarOff">
+      <h2>Radar Twitch <span class="mut small">(facultatif)</span></h2>
+      <p class="lead" style="margin:0">Liste les lives en français et les clips qui montent. Il s'active avec deux clés Twitch gratuites (voir Aide). Inutile pour fabriquer des clips.</p>
+    </div>
+    <div class="card" id="radarOn" hidden>
+      <h2>Clips Twitch qui montent</h2><p class="lead" id="radarStatus"></p>
+      <div style="overflow-x:auto"><table><thead><tr><th>Clip</th><th>Chaîne</th><th class="num">Vues/h</th><th></th></tr></thead><tbody id="clipRows"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ===================== AIDE ===================== -->
+  <section class="tab" id="aide">
+    <div class="card">
+      <h2>Quels liens marchent ?</h2>
+      <table><tbody>
+        <tr><td><b>Twitch</b> (clips et rediffusions)</td><td class="mut">Oui</td></tr>
+        <tr><td><b>Kick</b></td><td class="mut">Oui</td></tr>
+        <tr><td><b>Google Drive</b></td><td class="mut">Oui, si partagé « Tous les utilisateurs disposant du lien »</td></tr>
+        <tr><td><b>Lien direct vers un .mp4</b></td><td class="mut">Oui</td></tr>
+        <tr><td><b>YouTube</b></td><td class="mut">Bloqué : YouTube refuse les serveurs de montage. Passe par Google Drive.</td></tr>
+      </tbody></table>
+    </div>
+    <div class="card">
+      <h2>Clipper une vidéo YouTube</h2>
+      <ol class="how">
+        <li>Récupère le fichier vidéo : la plupart des campagnes fournissent un lien de téléchargement ou un dossier Drive dans leur brief.</li>
+        <li>Dépose le fichier sur ton Google Drive, puis Partager → « Tous les utilisateurs disposant du lien ».</li>
+        <li>Copie le lien de partage et colle-le dans « Créer ».</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h2>Sur un ordinateur partagé</h2>
+      <p class="lead" style="margin:0">La clé reste enregistrée dans ce navigateur. À la bibliothèque, clique sur « Déconnecter » en haut avant de partir. Si tu penses que quelqu'un l'a vue, supprime-la sur <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener">tes clés GitHub</a> et crées-en une autre.</p>
+    </div>
+    <div class="card">
+      <h2>Bon à savoir</h2>
+      <ol class="how">
+        <li>Les clips en ligne sont visibles par quiconque a l'adresse de la page. Les 30 derniers sont gardés.</li>
+        <li>Les moments forts sont repérés au son (cris, rires, action). Regarde toujours le clip avant de le poster.</li>
+        <li>Ne clippe que ce qu'on t'autorise : brief de campagne qui cite la source, ou accord du streamer. Pas de spoiler.</li>
+        <li>Tu peux aussi demander à Claude : « clippe ce lien en best-of, 4 moments forts ».</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const REPO = (() => { const r = location.pathname.split("/").filter(Boolean)[0];
+  return location.hostname.endsWith(".github.io") && r ? location.hostname.split(".")[0] + "/" + r : "adebayo-moutalabi/clip-usine"; })();
+const API = "https://api.github.com/repos/" + REPO;
+
+/* ---------- onglets ---------- */
+function show(tab) {
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  document.querySelectorAll("section.tab").forEach((s) => s.classList.toggle("on", s.id === tab));
+  if (tab === "clips") loadClips();
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
+
+/* ---------- clé : enregistrée une fois sur l'appareil ---------- */
+const K = "clipusine_key";
+const getKey = () => { try { return localStorage.getItem(K) || ""; } catch (e) { return window.__k || ""; } };
+const setKey = (v) => { try { v ? localStorage.setItem(K, v) : localStorage.removeItem(K); } catch (e) { window.__k = v; } };
+function refreshConn() {
+  const on = !!getKey();
+  $("chip").classList.toggle("on", on); $("chipTxt").textContent = on ? "Studio connecté" : "Non connecté";
+  $("logout").hidden = !on; $("connect").hidden = on;
+}
+function note(box, text, kind) { const d = el("div", text, "msg " + (kind || "")); $(box).replaceChildren(d); return d; }
+$("saveKey").addEventListener("click", async () => {
+  const k = $("key").value.trim().replace(/\s+/g, "");
+  if (!k) return note("keyMsg", "Colle d'abord la clé.", "bad");
+  $("saveKey").disabled = true; note("keyMsg", "Vérification de la clé…");
+  try {
+    const r = await fetch(API + "/actions/workflows", { headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + k } });
+    if (r.status === 401) throw new Error("Clé refusée : elle est incomplète ou expirée. Recopie-la en entier.");
+    if (r.status === 403 || r.status === 404) throw new Error("La clé ne donne pas accès au dépôt clip-usine. Vérifie l'étape 2 (Only select repositories → clip-usine) et l'étape 3 (Actions : Read and write).");
+    if (!r.ok) throw new Error("GitHub a répondu " + r.status + ". Réessaie dans une minute.");
+    setKey(k); $("key").value = ""; $("keyMsg").replaceChildren(); refreshConn();
+  } catch (e) { note("keyMsg", e.message, "bad"); }
+  finally { $("saveKey").disabled = false; }
+});
+$("logout").addEventListener("click", () => { setKey(""); refreshConn(); });
+refreshConn();
+
+/* ---------- reconnaissance du lien ---------- */
+function kind(u) {
+  if (u === "test") return ["ok", "Vidéo de test", "Une démonstration de 30 secondes avec une voix, pour voir le rendu."];
+  if (!/^https?:\/\//i.test(u)) return ["bad", "Lien invalide", "Le lien doit commencer par https://"];
+  if (/youtube\.com|youtu\.be/i.test(u)) return ["warn", "YouTube", "YouTube bloque les serveurs de montage : ça échouera presque sûrement. Passe par Google Drive (voir Aide)."];
+  if (/twitch\.tv/i.test(u)) return ["ok", "Twitch", /clips\.twitch|\/clip\//i.test(u) ? "Clip reconnu." : "Rediffusion reconnue : choisis « Un extrait », « Temps forts » ou « Best-of »."];
+  if (/kick\.com/i.test(u)) return ["ok", "Kick", "Lien reconnu."];
+  if (/drive\.google\.com/i.test(u)) return ["ok", "Google Drive", "Vérifie que le partage est sur « Tous les utilisateurs disposant du lien »."];
+  if (/tiktok\.com|instagram\.com/i.test(u)) return ["warn", "Réseau social", "Reposter la vidéo d'un autre compte est rarement autorisé et souvent pénalisé. Utilise la source d'origine."];
+  if (/\.(mp4|mov|webm|mkv)(\?|$)/i.test(u)) return ["ok", "Fichier vidéo", "Lien direct reconnu."];
+  return ["warn", "Site inconnu", "Ça peut marcher ; sinon passe par Google Drive."];
+}
+function checkUrl() {
+  const u = $("url").value.trim(), box = $("source");
+  if (!u) { box.hidden = true; return; }
+  const [k, name, txt] = kind(u);
+  box.className = "source " + k; box.replaceChildren(el("b", name), el("span", txt)); box.hidden = false;
+}
+$("url").addEventListener("input", checkUrl);
+$("useTest").addEventListener("click", () => { $("url").value = "test"; if (!$("titre").value) $("titre").value = "Il saute du pont en voiture"; checkUrl(); });
+
+/* ---------- choix ---------- */
+let mode = "entier", style = "dynamique", layout = "flou";
+function pick(groupId, attr, cb) {
+  document.querySelectorAll("#" + groupId + " [data-" + attr + "]").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("#" + groupId + " [data-" + attr + "]").forEach((x) => x.classList.toggle("on", x === b)); cb(b.dataset[attr]);
+  }));
+}
+pick("modes", "mode", (v) => { mode = v; $("optExtrait").hidden = v !== "extrait"; $("optAuto").hidden = !(v === "auto" || v === "montage"); });
+pick("styles", "style", (v) => { style = v; });
+pick("layouts", "layout", (v) => { layout = v; $("optCam").hidden = v !== "cam"; });
+
+/* ---------- fabrication ---------- */
+const STEPS = ["send", "queue", "build", "pub"];
+function stepTo(name, done) {
+  const i = STEPS.indexOf(name);
+  document.querySelectorAll("#steps li").forEach((li, j) => { li.className = j < i || (done && j === i) ? "done" : j === i ? "now" : ""; });
+}
+let ticker = null;
+function startTimer() { const t0 = Date.now(); clearInterval(ticker);
+  ticker = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); $("timer").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }, 1000); }
+async function gh(path, opts = {}) {
+  return fetch(API + path, { ...opts, headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + getKey(), ...(opts.headers || {}) } });
+}
+async function fetchJSON(path) { try { const r = await fetch(path + "?t=" + Date.now(), { cache: "no-store" }); return r.ok ? r.json() : null; } catch (e) { return null; } }
+
+$("go").addEventListener("click", async () => {
+  const u = $("url").value.trim();
+  if (!getKey()) { $("connect").hidden = false; $("connect").scrollIntoView({ behavior: "smooth" }); return note("keyMsg", "Connecte d'abord le studio : c'est à faire une seule fois.", "bad"); }
+  if (!u) { $("url").focus(); return; }
+  if (kind(u)[0] === "bad") { checkUrl(); return; }
+  if (mode === "extrait" && !$("debut").value.trim()) { $("debut").focus(); return; }
+  const inputs = { url: u, titre: $("titre").value.trim(), debut: "", fin: "", auto: "0", montage: "non",
+    mise_en_page: layout === "cam" ? $("camPos").value : layout, style, mention: $("pub").checked ? "Partenariat rémunéré" : "" };
+  if (mode === "extrait") { inputs.debut = $("debut").value.trim(); inputs.fin = $("fin").value.trim(); }
+  if (mode === "auto" || mode === "montage") inputs.auto = $("nAuto").value;
+  if (mode === "montage") inputs.montage = "oui";
+
+  $("form").hidden = true; $("track").hidden = false; $("again").hidden = true;
+  $("trackTitle").textContent = "Fabrication en cours"; $("trackMsg").replaceChildren(); $("result").replaceChildren();
+  stepTo("send"); startTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
+  const t0 = Date.now();
+  try {
+    const r = await gh("/actions/workflows/clip.yml/dispatches", { method: "POST", body: JSON.stringify({ ref: "main", inputs }) });
+    if (r.status === 401) { setKey(""); refreshConn(); throw new Error("La clé a expiré ou a été supprimée. Reconnecte le studio."); }
+    if (r.status === 403 || r.status === 404) throw new Error("La clé n'a pas le droit de lancer le montage. Recrée-la avec « Actions : Read and write » sur clip-usine.");
+    if (!r.ok) throw new Error("GitHub a répondu " + r.status + ". Réessaie dans une minute.");
+    stepTo("queue");
+    let run = null;
+    for (let i = 0; i < 20 && !run; i++) {
+      await sleep(4000);
+      const j = await (await gh("/actions/workflows/clip.yml/runs?per_page=5&event=workflow_dispatch")).json();
+      run = (j.workflow_runs || []).find((x) => new Date(x.created_at).getTime() >= t0 - 30000) || null;
+    }
+    if (!run) throw new Error("Le serveur de montage n'a pas démarré. Réessaie dans une minute.");
+    while (run.status !== "completed") {
+      if (run.status === "in_progress") stepTo("build");
+      await sleep(8000);
+      run = await (await gh("/actions/runs/" + run.id)).json();
+    }
+    stepTo("pub");
+    const num = String(run.run_number).padStart(4, "0");
+    let st = null;
+    for (let i = 0; i < 30 && !st; i++) { st = await fetchJSON("status/" + num + ".json"); if (!st) await sleep(6000); }
+    if (run.conclusion !== "success" || (st && !st.ok)) {
+      clearInterval(ticker); $("trackTitle").textContent = "Le clip n'a pas pu être fabriqué";
+      note("trackMsg", (st && st.message) || "Le montage a échoué. Vérifie que le lien s'ouvre sans être connecté, puis réessaie.", "bad");
+      $("again").hidden = false; return;
+    }
+    let clip = null;
+    for (let i = 0; i < 20 && !clip; i++) { const list = (await fetchJSON("clips/index.json")) || []; clip = list.find((c) => c.run === run.run_number); if (!clip) await sleep(6000); }
+    stepTo("pub", true); clearInterval(ticker); $("trackTitle").textContent = "Ton clip est prêt";
+    if (clip) $("result").replaceChildren(clipView(clip, true));
+    else note("trackMsg", "Le clip est fabriqué ; il apparaîtra dans « Mes clips » d'ici une minute.", "ok");
+    $("again").hidden = false; loadClips();
+  } catch (e) {
+    clearInterval(ticker); $("trackTitle").textContent = "Problème"; note("trackMsg", e.message || String(e), "bad"); $("again").hidden = false;
+  }
+});
+$("again").addEventListener("click", () => { $("track").hidden = true; $("form").hidden = false; });
+
+/* ---------- clips ---------- */
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); } catch (e) { prompt("Copie ce texte :", text); return; }
+  const t = btn.textContent; btn.textContent = "Copié ✓"; setTimeout(() => (btn.textContent = t), 1300);
+}
+function clipView(c, large) {
+  const base = "clips/" + encodeURIComponent(c.id);
+  const v = document.createElement("video"); v.controls = true; v.playsInline = true; v.preload = large ? "metadata" : "none";
+  v.poster = base + ".jpg"; v.src = base + ".mp4";
+  const when = c.created ? new Date(c.created).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  const meta = [Math.round(c.duration || 0) + " s", c.style, (c.extraits || 1) > 1 ? c.extraits + " moments" : "", when].filter(Boolean).join(" · ");
+  const dl = el("a", "⬇ Télécharger", "btn primary"); dl.href = base + ".mp4"; dl.download = (c.title || c.id).replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-") + ".mp4";
+  const pr = el("button", "Copier le prompt Claude", "btn"); pr.type = "button";
+  pr.addEventListener("click", async () => {
+    try { const md = await (await fetch(base + ".md")).text(); const m = md.match(/```\n([\s\S]*?)```/); copy(m ? m[1] : md, pr); }
+    catch (e) { pr.textContent = "Indisponible"; }
+  });
+  const row = el("div", null, "row"); row.append(dl, pr);
+  if (large) {
+    const box = el("div", null, "result"), side = el("div");
+    side.append(el("h2", c.title || "Clip sans titre"), el("p", meta, "mut small"), row,
+      el("p", "Avant de poster : vérifie l'accroche des 2 premières secondes, puis colle le prompt dans Claude pour la légende et les hashtags.", "mut small"));
+    box.append(v, side); return box;
+  }
+  const card = el("div", null, "clip"); card.append(v, el("h3", c.title || "Clip sans titre"), el("p", meta), row); return card;
+}
+async function loadClips() {
+  const list = (await fetchJSON("clips/index.json")) || [];
+  $("gallery").replaceChildren(...list.map((c) => clipView(c, false)));
+  $("noClips").hidden = list.length > 0;
+  $("nClips").hidden = !list.length; $("nClips").textContent = list.length;
+  $("clipInfo").textContent = list.length ? list.length + " clip(s) · les 30 derniers sont gardés" : "";
+}
+$("reload").addEventListener("click", loadClips);
+loadClips();
+
+/* ---------- radar ---------- */
+fetchJSON("data/radar.json").then((d) => {
+  if (!d || !d.game) return;
+  $("radarOff").hidden = true; $("radarOn").hidden = false;
+  $("radarStatus").textContent = d.game.name + " · mis à jour le " + new Date(d.updated).toLocaleString("fr-FR");
+  (d.clips || []).slice(0, 25).forEach((c) => {
+    const tr = el("tr"), t = el("td"), a = el("a", c.title || "(sans titre)"); a.href = /^https:\/\//.test(c.url) ? c.url : "#"; a.target = "_blank"; a.rel = "noopener"; t.append(a);
+    const act = el("td"), b = el("button", "Clipper", "btn"); b.type = "button";
+    b.addEventListener("click", () => { $("url").value = c.url; checkUrl(); show("studio"); }); act.append(b);
+    tr.append(t, el("td", c.channel), el("td", Math.round(c.per_hour).toLocaleString("fr-FR"), "num"), act); $("clipRows").append(tr);
+  });
+});
+
+/* ---------- calculateur ---------- */
+function calc() {
+  const v = +$("cViews").value || 0, r = +$("cRate").value || 0, cap = +$("cCap").value || 0, fee = (+$("cFee").value || 0) / 100;
+  let g = v / 1000 * r; const capped = cap > 0 && g > cap; if (capped) g = cap;
+  $("cOut").textContent = (g * (1 - fee)).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  $("cNote").textContent = capped ? "Plafond atteint : au-delà, les vues ne rapportent plus rien sur ce clip." : "Dans la devise de la campagne, après commission.";
+}
+["cViews", "cRate", "cCap", "cFee"].forEach((id) => $(id).addEventListener("input", calc)); calc();
+</script>
+</body>
+</html>
