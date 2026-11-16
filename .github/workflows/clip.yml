@@ -1,0 +1,89 @@
+name: Fabriquer des clips
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Lien(s) du clip ou de la VOD (Twitch, Kick, Drive...). Plusieurs liens : sépare par un espace"
+        required: true
+      titre:
+        description: "Titre incrusté en haut (6 mots max). Vide = pas de titre"
+        required: false
+        default: ""
+      debut:
+        description: "Début (ex. 1:02:30). Vide = clip entier"
+        required: false
+        default: ""
+      fin:
+        description: "Fin (ex. 1:03:15). Vide = début + 60 s"
+        required: false
+        default: ""
+      auto:
+        description: "VOD longue : nombre de temps forts à trouver tout seul (0 = désactivé)"
+        required: false
+        default: "0"
+      mise_en_page:
+        description: "flou = vidéo entière sur fond flouté · zoom = plein écran · cam = facecam en haut"
+        type: choice
+        options: [flou, zoom, cam]
+        default: flou
+      cam:
+        description: "Coin de la facecam (si mise en page cam) : hg, hd, bg, bd"
+        type: choice
+        options: [hg, hd, bg, bd]
+        default: hg
+      mention:
+        description: "Mention pub affichée 4 s (ex. Partenariat rémunéré). Vide = aucune"
+        required: false
+        default: ""
+      sous_titres:
+        description: "Sous-titres automatiques"
+        type: choice
+        options: [oui, non]
+        default: oui
+
+permissions:
+  contents: read
+
+jobs:
+  clip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Outils
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          pip install -q -r requirements.txt
+      - name: Cache du modèle de sous-titres
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-small-v1
+      - name: Fabrication
+        env:
+          IN_URL: ${{ inputs.url }}
+          IN_TITRE: ${{ inputs.titre }}
+          IN_DEBUT: ${{ inputs.debut }}
+          IN_FIN: ${{ inputs.fin }}
+          IN_AUTO: ${{ inputs.auto }}
+          IN_LAYOUT: ${{ inputs.mise_en_page }}
+          IN_CAM: ${{ inputs.cam }}
+          IN_MENTION: ${{ inputs.mention }}
+          IN_SUBS: ${{ inputs.sous_titres }}
+        run: |
+          python scripts/make_clip.py \
+            --url "$IN_URL" --title "$IN_TITRE" --start "$IN_DEBUT" --end "$IN_FIN" \
+            --auto "${IN_AUTO:-0}" --layout "$IN_LAYOUT" --cam "$IN_CAM" \
+            --mention "$IN_MENTION" --subs "$IN_SUBS" --out out
+      - name: Clips à télécharger
+        uses: actions/upload-artifact@v4
+        with:
+          name: clips-${{ github.run_number }}
+          path: out/
+          retention-days: 7
