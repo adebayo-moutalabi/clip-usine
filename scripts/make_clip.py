@@ -58,6 +58,12 @@ def download(url, dest, start=None, end=None, audio_only=False):
         return Path(url)
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    if url == "test":  # vidéo de démonstration générée sur place, sans téléchargement
+        out = Path(str(dest) + ".mp4")
+        run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=30:d=20",
+             "-f", "lavfi", "-i", "sine=f=440:d=20", "-c:v", "libx264", "-preset", "ultrafast",
+             "-c:a", "aac", str(out)])
+        return out
     cmd = ["yt-dlp", "--no-playlist", "--no-progress", "-o", str(dest) + ".%(ext)s"]
     if audio_only:
         cmd += ["-f", "bestaudio/worst", "-x", "--audio-format", "m4a"]

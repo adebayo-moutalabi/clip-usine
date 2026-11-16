@@ -23,6 +23,8 @@ Deux pièces :
 
 ## Fabriquer un clip
 
+Pour vérifier que tout marche sans vraie vidéo : mets `test` dans le champ Lien.
+
 Onglet **Actions** → « Fabriquer des clips » → *Run workflow*, puis remplis le formulaire.
 
 | Champ | Exemple | Effet |
