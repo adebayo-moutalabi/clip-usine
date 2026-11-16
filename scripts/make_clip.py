@@ -110,11 +110,36 @@ def download(url, dest, start=None, end=None, audio_only=False):
     if start is not None and end is not None:
         cmd += ["--download-sections", f"*{hms(start)}-{hms(end)}", "--force-keyframes-at-cuts"]
     cmd.append(url)
-    run(cmd)
+    print("+", " ".join(cmd)[:600], flush=True)
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    print(res.stdout[-2000:], res.stderr[-3000:], sep="\n", flush=True)
     files = sorted(dest.parent.glob(dest.name + ".*"))
-    if not files:
-        sys.exit(f"Téléchargement impossible : {url}")
+    if res.returncode != 0 or not files:
+        raise SourceError(explain(res.stderr, url))
     return files[0]
+
+
+class SourceError(Exception):
+    """Erreur de source, avec un message lisible par un humain."""
+
+
+def explain(stderr, url):
+    e = (stderr or "").lower()
+    if "youtube.com" in url or "youtu.be" in url:
+        if "not a bot" in e or "sign in" in e:
+            return ("YouTube bloque les serveurs de fabrication (contrôle anti-robot). "
+                    "Mets la vidéo sur Google Drive en partage « Tous les utilisateurs disposant du lien », "
+                    "puis colle le lien Drive.")
+    if "private" in e or "privée" in e:
+        return "La vidéo est privée : rends-la publique ou partage-la par lien."
+    if "unavailable" in e or "not available" in e or "404" in e:
+        return "La vidéo est introuvable ou supprimée. Vérifie le lien."
+    if "drive.google" in url:
+        return ("Google Drive refuse l'accès. Dans Drive : Partager, puis "
+                "« Tous les utilisateurs disposant du lien ».")
+    if "unsupported url" in e:
+        return "Ce site n'est pas pris en charge. Essaie un lien Twitch, Kick, Google Drive ou un lien direct vers un .mp4."
+    return "Téléchargement impossible. Vérifie que le lien s'ouvre bien dans un navigateur sans être connecté."
 
 
 # ---------------------------------------------------------------- analyse du son
@@ -531,12 +556,18 @@ def main():
             else:
                 idx += 1
                 build_clip(url, [(start, end)], idx, args, outdir, work)
+        except SourceError as e:
+            failed.append(str(e))
+            print(f"ECHEC {url} : {e}", file=sys.stderr)
         except subprocess.CalledProcessError as e:
-            failed.append(url)
+            failed.append("Le montage a échoué sur cette vidéo (format inhabituel ou extrait vide). "
+                          "Essaie un autre extrait ou le style « simple ».")
             print(f"ECHEC {url} : {e}", file=sys.stderr)
     shutil.rmtree(work, ignore_errors=True)
     if not list(outdir.glob("*.mp4")):
-        sys.exit("Aucun clip produit.")
+        msg = failed[0] if failed else "Aucun clip produit."
+        (outdir / "erreur.json").write_text(json.dumps({"message": msg}, ensure_ascii=False))
+        sys.exit(msg)
 
 
 if __name__ == "__main__":

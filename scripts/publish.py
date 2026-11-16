@@ -57,6 +57,7 @@ def main():
     new = []
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     if args.clips:
+        Path(args.clips).mkdir(parents=True, exist_ok=True)
         for mp4 in sorted(Path(args.clips).glob("*.mp4")):
             cid = f"{int(args.run):04d}-{mp4.stem}"
             meta = {}
@@ -76,6 +77,18 @@ def main():
             if src.exists() and not dst.exists():
                 shutil.copy(src, dst)
     (site / "clips" / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1))
+
+    # état de chaque fabrication, lu par le studio pour afficher un message clair
+    (site / "status").mkdir(exist_ok=True)
+    if (prev / "status").exists():
+        for f in sorted((prev / "status").glob("*.json"))[-50:]:
+            shutil.copy(f, site / "status" / f.name)
+    if args.clips:
+        err = Path(args.clips) / "erreur.json"
+        state = {"run": int(args.run), "ok": bool(new), "clips": [c["id"] for c in new]}
+        if err.exists():
+            state["message"] = json.loads(err.read_text()).get("message", "")
+        (site / "status" / f"{int(args.run):04d}.json").write_text(json.dumps(state, ensure_ascii=False))
 
     sh(["git", "init", "-q", "-b", "gh-pages"], cwd=site)
     sh(["git", "config", "user.name", "clip-usine-bot"], cwd=site)

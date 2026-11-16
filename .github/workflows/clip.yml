@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: "Lien(s) du clip ou de la VOD (Twitch, Kick, Drive...). Écris test pour une vidéo de démonstration"
+        description: "Lien du clip ou de la VOD (Twitch, Kick, Google Drive, lien .mp4). Écris test pour une vidéo de démonstration"
         required: true
         default: "test"
       titre:
@@ -87,12 +87,14 @@ jobs:
             --auto "${IN_AUTO:-0}" --montage "${IN_MONTAGE:-non}" --layout "${IN_LAYOUT:-flou}" \
             --style "${IN_STYLE:-dynamique}" --mention "$IN_MENTION" --out out
       - name: Clips à télécharger
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: clips-${{ github.run_number }}
           path: out/
           retention-days: 7
       - name: Publier sur le site
+        if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/publish.py --clips out
