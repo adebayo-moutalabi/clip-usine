@@ -128,8 +128,13 @@ def transcribe(path, lang="fr", model_size="small"):
     except ImportError:
         print("faster-whisper absent : pas de sous-titres.")
         return [], ""
+    import numpy as np
+    # on décode l'audio nous-mêmes : évite les incompatibilités entre faster-whisper et PyAV
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+                         check=True, capture_output=True).stdout
+    audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
-    segments, _ = model.transcribe(str(path), language=lang or None, word_timestamps=True, vad_filter=True)
+    segments, _ = model.transcribe(audio, language=lang or None, word_timestamps=True, vad_filter=True)
     words, text = [], []
     for seg in segments:
         text.append(seg.text.strip())
@@ -315,7 +320,10 @@ def process(url, start, end, idx, args, outdir, work):
     if args.subs and info["has_audio"]:
         run(["ffmpeg", "-y", "-v", "error", "-ss", f"{s:.3f}", "-t", f"{dur:.3f}", "-i", str(src),
              "-vn", "-ac", "1", "-ar", "16000", str(cut)])
-        words, transcript = transcribe(cut, args.lang, args.model)
+        try:
+            words, transcript = transcribe(cut, args.lang, args.model)
+        except Exception as e:  # un souci de sous-titres ne doit pas faire perdre le clip
+            print(f"Sous-titres indisponibles pour ce clip : {e}", file=sys.stderr)
     groups = group_words(words)
     ass = work / f"{name}.ass"
     build_ass(ass, dur, groups, args.title, args.mention,
