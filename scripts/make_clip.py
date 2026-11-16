@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Clip Usine — transforme un clip/VOD en short vertical 9:16 sous-titré.
+"""Clip Usine — transforme un clip ou une VOD en short vertical 9:16 monté.
 
-Tourne dans GitHub Actions (aucune installation sur ton PC).
-Étapes : téléchargement -> (détection auto des temps forts) -> recadrage 9:16
--> sous-titres mot à mot -> titre + mention pub -> MP4 + fiche de publication.
+Tourne dans GitHub Actions (rien à installer sur ton PC).
+
+Chaîne de fabrication :
+  1. téléchargement de la source (ou vidéo de test)
+  2. repérage des temps forts au son (mode auto / montage)
+  3. passe 1 : recadrage 9:16, zooms sur les pics sonores, fondus entre extraits
+  4. sous-titres mot à mot (mot en cours surligné)
+  5. passe 2 : titre d'accroche, barre de progression, fondus, niveau sonore
+  6. fiche de publication avec prompt Claude
 """
 import argparse
 import json
@@ -15,11 +21,15 @@ import sys
 from pathlib import Path
 
 W, H, FPS = 1080, 1920, 30
-MAX_CLIP = 90  # secondes, garde-fou
+MAX_CLIP = 90          # secondes, garde-fou
+XFADE = 0.35           # durée des fondus entre extraits d'un montage
+ACCENT_ASS = "&H20B0FF&"   # jaune-orangé (ASS s'écrit en BGR)
+ACCENT_HEX = "0xFFB020"
+TRANSITIONS = ["fade", "smoothleft", "smoothup", "circleopen", "smoothright"]
 
 
 def run(cmd, **kw):
-    print("+", " ".join(str(c) for c in cmd), flush=True)
+    print("+", " ".join(str(c) for c in cmd)[:900], flush=True)
     return subprocess.run(cmd, check=True, **kw)
 
 
@@ -27,10 +37,9 @@ def to_seconds(t):
     """'1:02:03', '2:05', '125' -> secondes."""
     if t is None or str(t).strip() == "":
         return None
-    parts = [float(p) for p in str(t).strip().split(":")]
     s = 0.0
-    for p in parts:
-        s = s * 60 + p
+    for p in str(t).strip().split(":"):
+        s = s * 60 + float(p)
     return s
 
 
@@ -44,26 +53,55 @@ def probe(path):
         ["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)],
         check=True, capture_output=True, text=True).stdout
     info = json.loads(out)
-    dur = float(info["format"]["duration"])
     v = next((s for s in info["streams"] if s["codec_type"] == "video"), None)
     a = next((s for s in info["streams"] if s["codec_type"] == "audio"), None)
-    return {"duration": dur, "width": int(v["width"]) if v else 0,
+    return {"duration": float(info["format"]["duration"]), "width": int(v["width"]) if v else 0,
             "height": int(v["height"]) if v else 0, "has_audio": a is not None}
 
 
-# ---------------------------------------------------------------- téléchargement
+# ---------------------------------------------------------------- sources
+def make_test_video(out):
+    """Vidéo de démonstration de 30 s : mire animée, voix de synthèse, deux pics sonores."""
+    out = Path(out)
+    if out.exists():
+        return out
+    speech = out.with_suffix(".speech.wav")
+    text = ("Attends, regarde bien ce qui va se passer. Il prend la voiture, il fonce vers le pont. "
+            "Non, non, non, il ne va quand même pas sauter ! Incroyable, il l'a fait. "
+            "Franchement, c'est le meilleur moment du live. Maintenant il doit semer la police.")
+    has_voice = False
+    if shutil.which("espeak-ng"):
+        try:
+            run(["espeak-ng", "-v", "fr", "-s", "165", "-w", str(speech), text])
+            has_voice = True
+        except subprocess.CalledProcessError:
+            pass
+    bursts = "volume='if(between(t,9,10.2)+between(t,21,22),0.9,0)':eval=frame"
+    cmd = ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=30:d=30",
+           "-f", "lavfi", "-i", "anoisesrc=d=30:c=pink:a=0.6"]
+    if has_voice:
+        cmd += ["-stream_loop", "-1", "-i", str(speech),
+                "-filter_complex", f"[1:a]{bursts}[n];[2:a]volume=1.0[s];[n][s]amix=inputs=2:normalize=0[a]",
+                "-map", "0:v", "-map", "[a]"]
+    else:
+        cmd += ["-filter_complex", f"[1:a]{bursts}[a]", "-map", "0:v", "-map", "[a]"]
+    cmd += ["-t", "30", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", str(out)]
+    run(cmd)
+    return out
+
+
+def is_local(url):
+    return url == "test" or os.path.exists(url)
+
+
 def download(url, dest, start=None, end=None, audio_only=False):
     """Télécharge une source (clip Twitch/Kick, VOD, lien direct, Google Drive)."""
-    if os.path.exists(url):  # fichier local (tests)
-        return Path(url)
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if url == "test":  # vidéo de démonstration générée sur place, sans téléchargement
-        out = Path(str(dest) + ".mp4")
-        run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=1920x1080:r=30:d=20",
-             "-f", "lavfi", "-i", "sine=f=440:d=20", "-c:v", "libx264", "-preset", "ultrafast",
-             "-c:a", "aac", str(out)])
-        return out
+    if url == "test":
+        return make_test_video(dest.parent / "test_source.mp4")
+    if os.path.exists(url):
+        return Path(url)
     cmd = ["yt-dlp", "--no-playlist", "--no-progress", "-o", str(dest) + ".%(ext)s"]
     if audio_only:
         cmd += ["-f", "bestaudio/worst", "-x", "--audio-format", "m4a"]
@@ -79,50 +117,144 @@ def download(url, dest, start=None, end=None, audio_only=False):
     return files[0]
 
 
-# ---------------------------------------------------------------- temps forts
-def loudness_per_second(path):
-    """Énergie audio par seconde (mono 8 kHz), sans dépendance lourde."""
+# ---------------------------------------------------------------- analyse du son
+def loudness(path, step=1.0, start=None, dur=None):
+    """Énergie audio par tranche de `step` secondes (mono 8 kHz)."""
     import numpy as np
-    proc = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
-        check=True, capture_output=True)
-    pcm = np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32)
-    n = len(pcm) // 8000
+    cmd = ["ffmpeg", "-v", "error"]
+    if start is not None:
+        cmd += ["-ss", f"{start:.3f}"]
+    if dur is not None:
+        cmd += ["-t", f"{dur:.3f}"]
+    cmd += ["-i", str(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"]
+    pcm = np.frombuffer(subprocess.run(cmd, check=True, capture_output=True).stdout,
+                        dtype=np.int16).astype(np.float32)
+    size = int(8000 * step)
+    n = len(pcm) // size
     if n == 0:
         return np.zeros(0)
-    frames = pcm[: n * 8000].reshape(n, 8000)
-    return np.sqrt((frames ** 2).mean(axis=1))
+    return np.sqrt((pcm[: n * size].reshape(n, size) ** 2).mean(axis=1))
 
 
-def find_highlights(path, count=5, length=40, lead=12):
-    """Repère les `count` moments les plus bruyants (rires, cris, action).
-
-    Chaque fenêtre commence `lead` secondes AVANT le pic : on garde la montée
-    et la chute, pas seulement le cri.
-    """
+def find_highlights(path, count=5, length=35, lead=None):
+    """Les `count` fenêtres les plus intenses. Chaque fenêtre démarre avant le pic
+    pour garder la montée, pas seulement le cri."""
     import numpy as np
-    rms = loudness_per_second(path)
+    lead = lead if lead is not None else max(2, int(length * 0.35))
+    rms = loudness(path)
     n = len(rms)
     if n <= length:
         return [(0.0, float(n))]
     base = np.median(rms) + 1e-6
-    # score = pic court (5 s) rapporté au niveau de fond
-    kernel = np.ones(5) / 5
-    score = np.convolve(rms, kernel, mode="same") / base
+    score = np.convolve(rms, np.ones(5) / 5, mode="same") / base
     picks = []
-    order = np.argsort(score)[::-1]
-    for idx in order:
+    for idx in np.argsort(score)[::-1]:
         if len(picks) >= count:
             break
         start = max(0, min(int(idx) - lead, n - length))
-        if all(abs(start - p) >= length * 1.5 for p in picks):
+        if all(abs(start - p) >= length * 1.3 for p in picks):
             picks.append(start)
     return [(float(s), float(s + length)) for s in sorted(picks)]
 
 
+def find_peaks(path, start, dur, maxi=5):
+    """Instants (relatifs au début de l'extrait) où le son explose : on y place les zooms."""
+    import numpy as np
+    step = 0.25
+    rms = loudness(path, step, start, dur)
+    if len(rms) < 8:
+        return []
+    base = np.median(rms) + 1e-6
+    score = rms / base
+    peaks = []
+    for idx in np.argsort(score)[::-1]:
+        t = float(idx) * step
+        if score[idx] < 1.8 or len(peaks) >= maxi:
+            break
+        if 0.8 < t < dur - 0.8 and all(abs(t - p) >= 3.0 for p in peaks):
+            peaks.append(round(t, 2))
+    return sorted(peaks)
+
+
+# ---------------------------------------------------------------- passe 1 : image
+CAM_PRESETS = {"hg": (0.0, 0.0), "hd": (1.0, 0.0), "bg": (0.0, 1.0), "bd": (1.0, 1.0)}
+
+
+def layout_chain(layout, cam_size=0.28):
+    """Filtre ffmpeg qui produit [base] en 1080x1920 à partir de [0:v]."""
+    if layout == "zoom":
+        return f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}[base]"
+    if layout.startswith("cam-") and layout[4:] in CAM_PRESETS:
+        fx, fy = CAM_PRESETS[layout[4:]]
+        cs, top = max(0.1, min(0.6, cam_size)), 720
+        return (f"[0:v]split=2[a][b];"
+                f"[a]crop=iw*{cs}:ih*{cs}:(iw-iw*{cs})*{fx}:(ih-ih*{cs})*{fy},"
+                f"scale={W}:{top}:force_original_aspect_ratio=increase,crop={W}:{top}[top];"
+                f"[b]scale={W}:{H - top}:force_original_aspect_ratio=increase,crop={W}:{H - top}[bot];"
+                f"[top][bot]vstack=inputs=2[base]")
+    return (f"[0:v]split=2[a][b];"
+            f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+            f"boxblur=24:4,eq=brightness=-0.12[bg];"
+            f"[b]scale={W}:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[base]")
+
+
+def zoom_expr(peaks, dur):
+    """Facteur de zoom en fonction du temps : lente avancée + coup de zoom à chaque pic."""
+    parts = [f"1+0.04*t/{max(dur, 1):.2f}"]
+    for p in peaks:
+        # montée rapide, retombée douce (cloche étroite, sans virgule pour ffmpeg)
+        parts.append(f"0.11*exp(-((t-{p})/0.28)*((t-{p})/0.28))")
+    return "+".join(parts)
+
+
+def make_segment(src, start, dur, out, layout, has_audio, peaks=None):
+    """Passe 1 : un extrait normalisé (9:16, 30 i/s, stéréo 48 kHz), avec zooms si `peaks`."""
+    chain = layout_chain(layout)
+    if peaks is not None:
+        z = zoom_expr(peaks, dur)
+        chain += (f";[base]split=2[k][m];"
+                  f"[m]scale=w='2*trunc({W // 2}*({z}))':h='2*trunc({H // 2}*({z}))':eval=frame[zz];"
+                  f"[k][zz]overlay=x='(W-w)/2':y='(H-h)/2':eval=frame[zo]")
+        last = "zo"
+    else:
+        last = "base"
+    chain += f";[{last}]fps={FPS},format=yuv420p,settb=AVTB[v]"
+    cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", str(src)]
+    if not has_audio:
+        cmd += ["-f", "lavfi", "-t", f"{dur:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
+    cmd += ["-filter_complex", chain, "-map", "[v]", "-map", "0:a:0" if has_audio else "1:a:0",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-c:a", "aac", "-b:a", "192k",
+            "-ar", "48000", "-ac", "2", "-shortest", str(out)]
+    run(cmd)
+    return out
+
+
+def join_segments(segs, out):
+    """Assemble plusieurs extraits avec un fondu différent entre chacun."""
+    if len(segs) == 1:
+        shutil.copy(segs[0], out)
+        return out
+    durs = [probe(s)["duration"] for s in segs]
+    cmd = ["ffmpeg", "-y", "-v", "error"]
+    for s in segs:
+        cmd += ["-i", str(s)]
+    parts, vprev, aprev, offset = [], "0:v", "0:a", 0.0
+    for i in range(1, len(segs)):
+        offset += durs[i - 1] - XFADE
+        tr = TRANSITIONS[(i - 1) % len(TRANSITIONS)]
+        parts.append(f"[{vprev}][{i}:v]xfade=transition={tr}:duration={XFADE}:offset={offset:.3f}[v{i}]")
+        parts.append(f"[{aprev}][{i}:a]acrossfade=d={XFADE}[a{i}]")
+        vprev, aprev = f"v{i}", f"a{i}"
+    cmd += ["-filter_complex", ";".join(parts), "-map", f"[{vprev}]", "-map", f"[{aprev}]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", str(out)]
+    run(cmd)
+    return out
+
+
 # ---------------------------------------------------------------- sous-titres
 def transcribe(path, lang="fr", model_size="small"):
-    """Retourne (mots [(debut, fin, texte)], texte complet). Vide si pas de voix."""
+    """Retourne (mots [(debut, fin, texte)], texte complet)."""
     try:
         from faster_whisper import WhisperModel
     except ImportError:
@@ -130,8 +262,8 @@ def transcribe(path, lang="fr", model_size="small"):
         return [], ""
     import numpy as np
     # on décode l'audio nous-mêmes : évite les incompatibilités entre faster-whisper et PyAV
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
-                         check=True, capture_output=True).stdout
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000",
+                          "-f", "s16le", "-"], check=True, capture_output=True).stdout
     audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
     segments, _ = model.transcribe(audio, language=lang or None, word_timestamps=True, vad_filter=True)
@@ -146,7 +278,7 @@ def transcribe(path, lang="fr", model_size="small"):
 
 
 def group_words(words, max_words=3, max_chars=18, max_gap=0.6):
-    """Regroupe les mots en petits blocs lisibles (style TikTok)."""
+    """Regroupe les mots en petits blocs lisibles. Retourne une liste de listes de mots."""
     groups, cur = [], []
     for w in words:
         if cur:
@@ -158,10 +290,15 @@ def group_words(words, max_words=3, max_chars=18, max_gap=0.6):
         cur.append(w)
     if cur:
         groups.append(cur)
+    return groups
+
+
+def group_spans(groups):
+    """(début, fin, texte) par bloc, sans chevauchement."""
     out = []
     for i, g in enumerate(groups):
         start, end = g[0][0], g[-1][1]
-        if i + 1 < len(groups):  # pas de chevauchement, pas de trou visible
+        if i + 1 < len(groups):
             end = min(max(end, start + 0.35), groups[i + 1][0][0])
         out.append((start, max(end, start + 0.2), " ".join(x[2] for x in g)))
     return out
@@ -177,7 +314,6 @@ def ass_escape(text):
 
 
 def wrap(text, width):
-    """Coupe un titre en lignes de `width` caractères max."""
     lines, cur = [], ""
     for word in text.split():
         if cur and len(cur) + 1 + len(word) > width:
@@ -190,7 +326,7 @@ def wrap(text, width):
     return lines
 
 
-def build_ass(path, duration, groups, title="", mention="", font="DejaVu Sans", title_y=170):
+def build_ass(path, duration, groups, title="", mention="", dynamic=True, title_y=170, font="DejaVu Sans"):
     head = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
@@ -200,8 +336,9 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Sub,{font},84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,7,2,2,60,60,520,1
-Style: Titre,{font},68,&H00FFFFFF,&H00FFFFFF,&H00000000,&HC8000000,-1,0,0,0,100,100,0,0,3,14,0,8,70,70,{title_y},1
+Style: Sub,{font},88,&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,8,3,2,60,60,520,1
+Style: Titre,{font},64,&H00FFFFFF,&H00FFFFFF,&H00000000,&HC8000000,-1,0,0,0,100,100,0,0,3,14,0,8,70,70,{title_y},1
+Style: Accroche,{font},104,&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,10,4,5,60,60,0,1
 Style: Mention,{font},38,&H00FFFFFF,&H00FFFFFF,&H00000000,&HC8000000,-1,0,0,0,100,100,0,0,3,8,0,7,40,40,60,1
 
 [Events]
@@ -209,79 +346,72 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     ev = []
     if title:
-        txt = "\\N".join(ass_escape(l) for l in wrap(title, 24)[:3])
-        ev.append(f"Dialogue: 1,{ass_time(0)},{ass_time(duration)},Titre,,0,0,0,,{txt}")
+        lines = [ass_escape(l) for l in wrap(title, 24)[:3]]
+        hook = min(1.6, duration / 3) if dynamic else 0.0
+        if hook:
+            big = "\\N".join(ass_escape(l).upper() for l in wrap(title, 14)[:4])
+            ev.append(f"Dialogue: 3,{ass_time(0)},{ass_time(hook)},Accroche,,0,0,0,,"
+                      f"{{\\fad(0,180)\\fscx70\\fscy70\\t(0,160,\\fscx100\\fscy100)}}{big}")
+        ev.append(f"Dialogue: 1,{ass_time(hook)},{ass_time(duration)},Titre,,0,0,0,,"
+                  f"{{\\fad(200,0)}}" + "\\N".join(lines))
     if mention:
         ev.append(f"Dialogue: 2,{ass_time(0)},{ass_time(min(duration, 4))},Mention,,0,0,0,,{ass_escape(mention)}")
-    for start, end, text in groups:
-        if start >= duration:
+    spans = group_spans(groups)
+    for g, (gs, ge, _) in zip(groups, spans):
+        if gs >= duration:
             continue
-        # petit effet "pop" à l'apparition
-        ev.append(f"Dialogue: 0,{ass_time(start)},{ass_time(min(end, duration))},Sub,,0,0,0,,"
-                  f"{{\\fscx88\\fscy88\\t(0,90,\\fscx100\\fscy100)}}{ass_escape(text).upper()}")
+        ge = min(ge, duration)
+        if not dynamic:
+            txt = ass_escape(" ".join(w[2] for w in g)).upper()
+            ev.append(f"Dialogue: 0,{ass_time(gs)},{ass_time(ge)},Sub,,0,0,0,,{txt}")
+            continue
+        for i, w in enumerate(g):  # un événement par mot : le mot prononcé passe en couleur
+            a = gs if i == 0 else w[0]
+            b = ge if i == len(g) - 1 else g[i + 1][0]
+            if b <= a:
+                continue
+            toks = []
+            for j, x in enumerate(g):
+                t = ass_escape(x[2]).upper()
+                toks.append(f"{{\\c{ACCENT_ASS}\\fscx108\\fscy108}}{t}{{\\c&HFFFFFF&\\fscx100\\fscy100}}" if j == i else t)
+            pop = "{\\fscx90\\fscy90\\t(0,80,\\fscx100\\fscy100)}" if i == 0 else ""
+            ev.append(f"Dialogue: 0,{ass_time(a)},{ass_time(min(b, duration))},Sub,,0,0,0,,{pop}{' '.join(toks)}")
     Path(path).write_text(head + "\n".join(ev) + "\n", encoding="utf-8")
 
 
-def write_srt(path, groups):
+def write_srt(path, spans):
     def t(s):
         return f"{int(s // 3600):02d}:{int(s % 3600 // 60):02d}:{int(s % 60):02d},{int(s * 1000 % 1000):03d}"
     lines = []
-    for i, (a, b, txt) in enumerate(groups, 1):
+    for i, (a, b, txt) in enumerate(spans, 1):
         lines += [str(i), f"{t(a)} --> {t(b)}", txt, ""]
     Path(path).write_text("\n".join(lines), encoding="utf-8")
 
 
-# ---------------------------------------------------------------- rendu vidéo
-CAM_PRESETS = {  # coin de la facecam : x, y (fractions de la source)
-    "hg": (0.0, 0.0), "hd": (1.0, 0.0), "bg": (0.0, 1.0), "bd": (1.0, 1.0),
-}
-
-
-def video_filter(layout, cam, cam_size, ass_path):
-    """Construit le filter_complex ffmpeg pour une sortie 1080x1920."""
+# ---------------------------------------------------------------- passe 2 : habillage
+def finish(base, out, duration, ass_path, dynamic):
+    """Incruste textes et barre de progression, fondus d'entrée/sortie, niveau sonore."""
     ass = str(ass_path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
-    if layout == "zoom":  # plein écran, recadrage central
-        chain = f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}[base]"
-    elif layout == "cam" and cam in CAM_PRESETS:  # facecam en haut, jeu en bas
-        fx, fy = CAM_PRESETS[cam]
-        cs = max(0.1, min(0.6, cam_size))
-        top_h = 720
-        chain = (
-            f"[0:v]split=2[a][b];"
-            f"[a]crop=iw*{cs}:ih*{cs}:(iw-iw*{cs})*{fx}:(ih-ih*{cs})*{fy},"
-            f"scale={W}:{top_h}:force_original_aspect_ratio=increase,crop={W}:{top_h}[top];"
-            f"[b]scale={W}:{H - top_h}:force_original_aspect_ratio=increase,crop={W}:{H - top_h}[bot];"
-            f"[top][bot]vstack=inputs=2[base]"
-        )
-    else:  # "flou" : vidéo entière nette au centre, fond flouté
-        chain = (
-            f"[0:v]split=2[a][b];"
-            f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-            f"boxblur=24:4,eq=brightness=-0.12[bg];"
-            f"[b]scale={W}:-2[fg];"
-            f"[bg][fg]overlay=(W-w)/2:(H-h)/2[base]"
-        )
-    return chain + f";[base]fps={FPS},ass='{ass}',format=yuv420p[v]"
-
-
-def render(src, out, start, duration, layout, cam, cam_size, ass_path, has_audio=True):
-    cmd = ["ffmpeg", "-y", "-v", "error", "-stats", "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(src)]
-    if not has_audio:
-        cmd += ["-f", "lavfi", "-t", f"{duration:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
-    cmd += ["-filter_complex", video_filter(layout, cam, cam_size, ass_path), "-map", "[v]",
-            "-map", "0:a:0" if has_audio else "1:a:0"]
-    if has_audio:
-        cmd += ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
-    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "160k",
-            "-ar", "48000", "-movflags", "+faststart", "-shortest", str(out)]
+    fo = max(0.0, duration - 0.3)
+    v = f"[0:v]ass='{ass}',fade=t=in:st=0:d=0.2,fade=t=out:st={fo:.2f}:d=0.3"
+    cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(base)]
+    if dynamic:
+        cmd += ["-f", "lavfi", "-i", f"color=c={ACCENT_HEX}:s={W}x10:r={FPS}:d={duration:.2f}"]
+        v += f"[t];[t][1:v]overlay=x='-W+W*t/{duration:.2f}':y=H-h:shortest=1,format=yuv420p[v]"
+    else:
+        v += ",format=yuv420p[v]"
+    a = f"[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=in:st=0:d=0.15,afade=t=out:st={fo:.2f}:d=0.3[a]"
+    cmd += ["-filter_complex", v + ";" + a, "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "160k",
+            "-ar", "48000", "-movflags", "+faststart", str(out)]
     run(cmd)
 
 
-# ---------------------------------------------------------------- fiche
 FICHE = """# Fiche de publication — {name}
 
 - Source : {url}
-- Extrait : {start} -> {end} ({dur:.0f} s) · mise en page : {layout}
+- Extraits : {spans}
+- Durée : {dur:.0f} s · mise en page : {layout} · style : {style}
 - Titre incrusté : {title}
 
 ## Avant de poster (30 secondes)
@@ -294,73 +424,87 @@ FICHE = """# Fiche de publication — {name}
 ## Prompt à coller dans Claude (accroche + légende)
 ```
 Tu es un monteur de shorts gaming francophone. Voici la transcription d'un clip
-de {dur:.0f} secondes tiré d'un live GTA 6. Donne-moi :
-1. 5 titres à incruster (6 mots max, sans spoiler, sans putaclic mensonger)
-2. 3 légendes TikTok/Reels (1 phrase + question pour les commentaires)
+de {dur:.0f} secondes tiré d'un live. Donne-moi :
+1. 5 titres à incruster (6 mots max, sans spoiler, sans promesse mensongère)
+2. 3 légendes TikTok/Reels/Shorts (1 phrase + une question pour les commentaires)
 3. 8 hashtags pertinents en français et en anglais
-4. Le meilleur moment pour couper le début si les 2 premières secondes sont molles
+4. Un commentaire de 2 phrases que je peux dire en voix off pour apporter mon avis
 Transcription :
 {transcript}
 ```
 """
 
 
-def process(url, start, end, idx, args, outdir, work):
+def build_clip(url, spans, idx, args, outdir, work):
+    """Fabrique UN clip à partir d'un ou plusieurs extraits (start, end) de la source."""
     name = f"clip_{idx:02d}"
-    src = download(url, work / name, start, end)
-    info = probe(src)
-    # si on a téléchargé une section, la source commence à 0
-    local = os.path.exists(url)
-    s = (start or 0.0) if local else 0.0
-    dur = (end - start) if (start is not None and end is not None) else info["duration"] - s
-    dur = max(1.0, min(dur, info["duration"] - s, args.max))
+    dynamic = args.style == "dynamique"
+    segs, used = [], []
+    budget = args.max
+    for k, (a, b) in enumerate(spans):
+        if budget <= 1:
+            break
+        src = download(url, work / f"{name}_src{k}", a, b)
+        info = probe(src)
+        s = (a or 0.0) if is_local(url) else 0.0
+        dur = (b - a) if (a is not None and b is not None) else info["duration"] - s
+        dur = max(1.0, min(dur, info["duration"] - s, budget))
+        budget -= dur
+        peaks = find_peaks(src, s, dur) if (dynamic and info["has_audio"]) else None
+        if dynamic and peaks is None:
+            peaks = []
+        print(f"Extrait {k + 1} : {hms(a or 0)} +{dur:.1f}s, zooms à {peaks}")
+        segs.append(make_segment(src, s, dur, work / f"{name}_seg{k}.mp4", args.layout,
+                                 info["has_audio"], peaks if dynamic else None))
+        used.append(f"{hms(a or 0)} (+{dur:.0f} s)")
+    base = join_segments(segs, work / f"{name}_base.mp4")
+    duration = probe(base)["duration"]
 
-    cut = work / f"{name}_cut.wav"
     words, transcript = [], ""
-    if args.subs and info["has_audio"]:
-        run(["ffmpeg", "-y", "-v", "error", "-ss", f"{s:.3f}", "-t", f"{dur:.3f}", "-i", str(src),
-             "-vn", "-ac", "1", "-ar", "16000", str(cut)])
+    if args.style != "brut":
         try:
-            words, transcript = transcribe(cut, args.lang, args.model)
+            words, transcript = transcribe(base, args.lang, args.model)
         except Exception as e:  # un souci de sous-titres ne doit pas faire perdre le clip
             print(f"Sous-titres indisponibles pour ce clip : {e}", file=sys.stderr)
     groups = group_words(words)
     ass = work / f"{name}.ass"
-    build_ass(ass, dur, groups, args.title, args.mention,
-              title_y=650 if args.layout == "cam" else 170)
+    build_ass(ass, duration, groups, args.title, args.mention, dynamic,
+              title_y=650 if args.layout.startswith("cam-") else 170)
     out = outdir / f"{name}.mp4"
-    render(src, out, s, dur, args.layout, args.cam, args.cam_size, ass, info["has_audio"])
+    finish(base, out, duration, ass, dynamic)
     if groups:
-        write_srt(outdir / f"{name}.srt", groups)
+        write_srt(outdir / f"{name}.srt", group_spans(groups))
     (outdir / f"{name}_fiche.md").write_text(FICHE.format(
-        name=name, url=url, start=hms(start or 0), end=hms((start or 0) + dur), dur=dur,
-        layout=args.layout, title=args.title or "(aucun)",
-        transcript=transcript or "(pas de voix détectée)"), encoding="utf-8")
-    print(f"OK {out} ({dur:.0f} s, {len(groups)} sous-titres)")
+        name=name, url=url, spans=", ".join(used), dur=duration, layout=args.layout, style=args.style,
+        title=args.title or "(aucun)", transcript=transcript or "(pas de voix détectée)"), encoding="utf-8")
+    (outdir / f"{name}.json").write_text(json.dumps({
+        "title": args.title, "source": url, "duration": round(duration, 1), "layout": args.layout,
+        "style": args.style, "extraits": len(segs), "sous_titres": len(groups)}, ensure_ascii=False))
+    print(f"OK {out} ({duration:.0f} s, {len(segs)} extrait(s), {len(groups)} sous-titres)")
     return out
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--url", required=True, help="une ou plusieurs URL (séparées par espace ou retour ligne)")
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--url", required=True, help="un ou plusieurs liens, ou 'test'")
     p.add_argument("--start", default="")
     p.add_argument("--end", default="")
-    p.add_argument("--auto", type=int, default=0, help="VOD longue : nombre de temps forts à extraire")
-    p.add_argument("--length", type=int, default=40, help="durée des clips en mode auto (s)")
-    p.add_argument("--layout", default="flou", choices=["flou", "zoom", "cam"])
-    p.add_argument("--cam", default="hg", choices=list(CAM_PRESETS))
-    p.add_argument("--cam-size", type=float, default=0.28)
+    p.add_argument("--auto", type=int, default=0, help="nombre de temps forts à trouver")
+    p.add_argument("--montage", default="non", help="oui = réunir les temps forts dans UN clip")
+    p.add_argument("--layout", default="flou", choices=["flou", "zoom"] + [f"cam-{c}" for c in CAM_PRESETS])
+    p.add_argument("--style", default="dynamique", choices=["dynamique", "simple", "brut"])
     p.add_argument("--title", default="")
     p.add_argument("--mention", default="")
-    p.add_argument("--subs", default="oui")
     p.add_argument("--lang", default="fr")
     p.add_argument("--model", default="small")
     p.add_argument("--max", type=float, default=60)
     p.add_argument("--out", default="out")
     args = p.parse_args()
-    args.subs = str(args.subs).lower() in ("oui", "true", "1", "yes")
     args.max = min(args.max, MAX_CLIP)
-    args.length = int(min(args.length, args.max))
+    montage = str(args.montage).lower() in ("oui", "true", "1", "yes")
+    args.auto = max(0, min(args.auto, 8))
+    if montage and args.auto < 2:
+        args.auto = 4
 
     outdir, work = Path(args.out), Path("work")
     outdir.mkdir(parents=True, exist_ok=True)
@@ -370,23 +514,28 @@ def main():
     if start is not None and end is None:
         end = start + args.max
     idx, failed = 0, []
-    for url in urls:
+    for n, url in enumerate(urls):
         try:
             if args.auto > 0:
-                audio = download(url, work / f"audio_{idx}", audio_only=True)
-                spans = find_highlights(audio, args.auto, args.length)
+                audio = download(url, work / f"audio_{n}", audio_only=True)
+                length = 9 if montage else 35
+                spans = find_highlights(audio, args.auto, length)
                 print("Temps forts :", [(hms(a), hms(b)) for a, b in spans])
-                for a, b in spans:
+                if montage:
                     idx += 1
-                    process(url, a, b, idx, args, outdir, work)
+                    build_clip(url, spans, idx, args, outdir, work)
+                else:
+                    for span in spans:
+                        idx += 1
+                        build_clip(url, [span], idx, args, outdir, work)
             else:
                 idx += 1
-                process(url, start, end, idx, args, outdir, work)
+                build_clip(url, [(start, end)], idx, args, outdir, work)
         except subprocess.CalledProcessError as e:
             failed.append(url)
             print(f"ECHEC {url} : {e}", file=sys.stderr)
     shutil.rmtree(work, ignore_errors=True)
-    if failed and not list(outdir.glob("*.mp4")):
+    if not list(outdir.glob("*.mp4")):
         sys.exit("Aucun clip produit.")
 
 

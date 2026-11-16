@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clip Usine — studio</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --txt:#e9ecf1; --mut:#9aa3b2; --acc:#ffb020; --ok:#3ecf8e; --bad:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:1040px; margin:0 auto; padding:24px 16px 72px; }
+  h1 { font-size:1.6rem; margin:0 0 2px; } h2 { font-size:1.1rem; margin:0 0 10px; }
+  .sub { color:var(--mut); margin:0 0 18px; }
+  nav { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  button, .btn { background:var(--card); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer; text-decoration:none; display:inline-block; }
+  nav button[aria-selected="true"] { border-color:var(--acc); color:var(--acc); }
+  .primary { background:var(--acc); color:#1a1300; border-color:var(--acc); font-weight:700; }
+  .primary:disabled { opacity:.5; cursor:wait; }
+  .small { padding:4px 10px; font-size:.85rem; }
+  section { display:none; } section.on { display:block; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px; }
+  label { display:block; font-size:.85rem; color:var(--mut); margin:12px 0 4px; }
+  input[type=text], input[type=password], input[type=number], select, textarea { width:100%; background:#0c0e12; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:9px 10px; font:inherit; }
+  textarea { min-height:140px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+  .choices { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:8px; }
+  .choice { border:1px solid var(--line); border-radius:10px; padding:10px 12px; cursor:pointer; background:#0c0e12; }
+  .choice.on { border-color:var(--acc); }
+  .choice b { display:block; } .choice span { font-size:.82rem; color:var(--mut); }
+  .mut { color:var(--mut); } .ok { color:var(--ok); } .bad { color:var(--bad); }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .check { display:flex; gap:8px; align-items:center; margin-top:12px; color:var(--txt); font-size:.95rem; }
+  .check input { width:auto; }
+  #status { white-space:pre-line; }
+  .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+  .clip video { width:100%; aspect-ratio:9/16; background:#000; border-radius:10px; display:block; }
+  .clip h3 { font-size:.95rem; margin:8px 0 2px; } .clip p { margin:0 0 8px; font-size:.82rem; color:var(--mut); }
+  table { width:100%; border-collapse:collapse; font-size:.95rem; }
+  th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:500; font-size:.8rem; text-transform:uppercase; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .tag { font-size:.75rem; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--mut); white-space:nowrap; }
+  .tag.hot { color:var(--ok); border-color:var(--ok); }
+  .big { font-size:2rem; font-weight:700; color:var(--acc); }
+  a { color:var(--acc); } ol { padding-left:20px; margin:8px 0; } li { margin:4px 0; }
+  details summary { cursor:pointer; color:var(--acc); margin-top:10px; }
+  .wrap { overflow-x:auto; }
+  @media (max-width:640px) { .hide-s { display:none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Clip Usine</h1>
+  <p class="sub">Colle un lien, choisis un style, récupère un short monté. Tout se passe dans cette page.</p>
+  <nav>
+    <button data-tab="studio" aria-selected="true">Studio</button>
+    <button data-tab="clips" aria-selected="false">Mes clips</button>
+    <button data-tab="radar" aria-selected="false">Radar</button>
+    <button data-tab="calc" aria-selected="false">Gains</button>
+    <button data-tab="aide" aria-selected="false">Aide</button>
+  </nav>
+
+  <section id="studio" class="on">
+    <div class="card">
+      <h2>1. La vidéo</h2>
+      <label for="fUrl">Lien du clip ou de la VOD (Twitch, Kick, Google Drive, lien direct)</label>
+      <div class="row"><input id="fUrl" type="text" placeholder="https://clips.twitch.tv/..." style="flex:1;min-width:220px">
+        <button class="small" id="useTest" type="button">Utiliser la vidéo de test</button></div>
+      <label for="fTitre">Titre d'accroche (6 mots max, facultatif)</label>
+      <input id="fTitre" type="text" maxlength="60" placeholder="Il rate TOUT le braquage">
+    </div>
+
+    <div class="card">
+      <h2>2. Quoi fabriquer</h2>
+      <div class="choices" id="modes">
+        <div class="choice on" data-mode="entier"><b>Clip entier</b><span>Le lien est déjà un clip court</span></div>
+        <div class="choice" data-mode="extrait"><b>Extrait précis</b><span>Je donne le début et la fin</span></div>
+        <div class="choice" data-mode="auto"><b>Temps forts auto</b><span>L'outil trouve les meilleurs moments d'une VOD</span></div>
+        <div class="choice" data-mode="montage"><b>Montage best-of</b><span>Les temps forts réunis en un seul clip, avec fondus</span></div>
+      </div>
+      <div class="grid" id="optExtrait" hidden>
+        <div><label for="fDebut">Début (ex. 1:02:30)</label><input id="fDebut" type="text"></div>
+        <div><label for="fFin">Fin (ex. 1:03:10)</label><input id="fFin" type="text"></div>
+      </div>
+      <div id="optAuto" hidden><label for="fAuto">Nombre de temps forts (2 à 8)</label><input id="fAuto" type="number" min="2" max="8" value="4"></div>
+    </div>
+
+    <div class="card">
+      <h2>3. Le style</h2>
+      <div class="grid">
+        <div><label for="fStyle">Montage</label>
+          <select id="fStyle">
+            <option value="dynamique">Dynamique : zooms sur les moments forts, mot surligné, barre de progression</option>
+            <option value="simple">Simple : sous-titres sobres</option>
+            <option value="brut">Brut : recadrage seul, aucun texte automatique</option>
+          </select></div>
+        <div><label for="fLayout">Mise en page</label>
+          <select id="fLayout">
+            <option value="flou">Vidéo entière sur fond flouté</option>
+            <option value="zoom">Plein écran (bords coupés)</option>
+            <option value="cam-hg">Facecam en haut (caméra en haut à gauche)</option>
+            <option value="cam-hd">Facecam en haut (caméra en haut à droite)</option>
+            <option value="cam-bg">Facecam en haut (caméra en bas à gauche)</option>
+            <option value="cam-bd">Facecam en haut (caméra en bas à droite)</option>
+          </select></div>
+      </div>
+      <label class="check"><input id="fPub" type="checkbox"> Clip rémunéré : afficher « Partenariat rémunéré » au début</label>
+    </div>
+
+    <div class="card">
+      <h2>4. Lancer</h2>
+      <label for="fKey">Clé d'accès (à créer une seule fois, voir l'onglet Aide)</label>
+      <input id="fKey" type="password" placeholder="github_pat_..." autocomplete="off">
+      <label class="check"><input id="fRemember" type="checkbox"> Mémoriser la clé sur cet appareil (à ne pas cocher sur un ordinateur partagé)</label>
+      <div class="row" style="margin-top:14px">
+        <button class="primary" id="go" type="button">Fabriquer</button>
+        <span class="mut">Compte 3 à 8 minutes. Tu peux laisser la page ouverte.</span>
+      </div>
+      <p id="status" class="mut" style="margin:12px 0 0"></p>
+    </div>
+  </section>
+
+  <section id="clips">
+    <div class="row" style="margin-bottom:12px"><button class="small" id="reload" type="button">Actualiser</button><span class="mut" id="clipCount"></span></div>
+    <div class="gallery" id="gallery"></div>
+    <p class="mut" id="noClips" hidden>Aucun clip pour l'instant. Fabrique le premier dans l'onglet Studio avec la vidéo de test.</p>
+  </section>
+
+  <section id="radar">
+    <div class="card" id="radarOff">
+      <h2>Radar Twitch (facultatif)</h2>
+      <p class="mut">Le radar liste les lives en français et les clips qui montent. Il n'est pas nécessaire pour fabriquer des clips. Il s'active quand deux clés Twitch gratuites sont ajoutées au dépôt ; la marche à suivre est dans l'onglet Aide.</p>
+    </div>
+    <div id="radarOn" hidden>
+      <p class="mut" id="radarStatus"></p>
+      <div class="card wrap"><h2>Clips qui montent</h2>
+        <table><thead><tr><th>Clip</th><th>Chaîne</th><th class="num">Vues</th><th class="num">Vues/h</th><th></th></tr></thead><tbody id="clipRows"></tbody></table></div>
+      <div class="card"><label for="dm">Message de prospection</label>
+        <textarea id="dm">Salut {nom} ! Je regarde ton live, il y a 2-3 moments qui feraient de très bons shorts.
+Je monte des clips verticaux sous-titrés (TikTok / Reels / Shorts) pour des streamers francophones.
+Je t'en fais 2 gratuitement sur ton live d'aujourd'hui : s'ils te plaisent, on parle d'un pack.
+Tu me donnes ton accord pour utiliser ta VOD ?</textarea></div>
+      <div class="card wrap"><h2>Lives en cours</h2>
+        <table><thead><tr><th>Chaîne</th><th class="num">Spectateurs</th><th class="hide-s">Titre</th><th>Cible</th><th></th></tr></thead><tbody id="liveRows"></tbody></table></div>
+    </div>
+  </section>
+
+  <section id="calc">
+    <div class="card">
+      <div class="grid">
+        <div><label for="cViews">Vues du clip</label><input id="cViews" type="number" min="0" value="20000"></div>
+        <div><label for="cRate">Tarif pour 1 000 vues</label><input id="cRate" type="number" min="0" step="0.05" value="0.70"></div>
+        <div><label for="cCap">Plafond par clip</label><input id="cCap" type="number" min="0" value="35"></div>
+        <div><label for="cFee">Commission (%)</label><input id="cFee" type="number" min="0" max="100" value="10"></div>
+        <div><label for="cN">Clips postés</label><input id="cN" type="number" min="1" value="1"></div>
+      </div>
+      <p class="mut" style="margin:16px 0 0">Tu touches environ</p>
+      <div class="big" id="cOut">—</div><p class="mut" id="cNote"></p>
+    </div>
+  </section>
+
+  <section id="aide">
+    <div class="card">
+      <h2>Comment ça marche</h2>
+      <p>Cette page est la télécommande. Le montage se fait sur un ordinateur de GitHub, gratuitement, pendant quelques minutes. Quand il a fini, le clip apparaît dans « Mes clips », prêt à être regardé et téléchargé. Rien ne s'installe chez toi.</p>
+    </div>
+    <div class="card">
+      <h2>Créer la clé d'accès (une seule fois, 2 minutes)</h2>
+      <p class="mut">La clé autorise cette page à lancer une fabrication à ta place, uniquement sur le dépôt clip-usine.</p>
+      <ol>
+        <li>Ouvre <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">la page de création de clé de GitHub</a>.</li>
+        <li>Nom : <b>clip-usine</b>. Expiration : 90 jours.</li>
+        <li>« Repository access » : choisis <b>Only select repositories</b>, puis <b>clip-usine</b>.</li>
+        <li>« Permissions », puis « Repository permissions » : mets <b>Actions</b> sur <b>Read and write</b>. Ne touche à rien d'autre.</li>
+        <li>Clique « Generate token », copie la clé (elle commence par <code>github_pat_</code>) et colle-la dans le Studio.</li>
+      </ol>
+      <p class="mut">La clé reste dans ton navigateur ; elle n'est envoyée qu'à GitHub. Si tu la perds ou si quelqu'un la voit, supprime-la sur la même page de GitHub et crées-en une autre.</p>
+    </div>
+    <div class="card">
+      <h2>Sans clé : demander à Claude</h2>
+      <p>Dans la conversation Claude où l'outil a été créé, écris par exemple : « Clippe ce lien en montage best-of, 4 temps forts, titre : … ». Claude lance la fabrication et te dit quand le clip est en ligne.</p>
+    </div>
+    <div class="card">
+      <h2>Activer le radar (facultatif)</h2>
+      <ol>
+        <li>Sur <a href="https://dev.twitch.tv/console" target="_blank" rel="noopener">dev.twitch.tv/console</a>, crée une application (nom libre, adresse de redirection <code>http://localhost</code>).</li>
+        <li>Copie le « Client ID » et génère un « Client Secret ».</li>
+        <li>Dans le dépôt GitHub : Settings, Secrets and variables, Actions, puis ajoute <code>TWITCH_CLIENT_ID</code> et <code>TWITCH_CLIENT_SECRET</code>.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h2>Règles à respecter</h2>
+      <ol>
+        <li>Ne clippe que ce qu'on t'autorise : le brief d'une campagne qui cite la source, ou l'accord écrit du streamer.</li>
+        <li>Pas de spoiler : ni fin du jeu, ni cinématique isolée.</li>
+        <li>Clip rémunéré : mention de partenariat visible et case « contenu de marque » cochée dans l'appli.</li>
+        <li>Jamais d'achat de vues.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; };
+const fmt = (n) => Number(n || 0).toLocaleString("fr-FR");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const REPO = (() => {
+  const repo = location.pathname.split("/").filter(Boolean)[0];
+  return location.hostname.endsWith(".github.io") && repo ? location.hostname.split(".")[0] + "/" + repo : "adebayo-moutalabi/clip-usine";
+})();
+const API = "https://api.github.com/repos/" + REPO;
+
+// ---- onglets
+function show(tab) {
+  document.querySelectorAll("nav button").forEach((x) => x.setAttribute("aria-selected", String(x.dataset.tab === tab)));
+  document.querySelectorAll("section").forEach((s) => s.classList.toggle("on", s.id === tab));
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
+
+// ---- formulaire
+let mode = "entier";
+document.querySelectorAll("#modes .choice").forEach((c) => c.addEventListener("click", () => {
+  mode = c.dataset.mode;
+  document.querySelectorAll("#modes .choice").forEach((x) => x.classList.toggle("on", x === c));
+  $("optExtrait").hidden = mode !== "extrait";
+  $("optAuto").hidden = !(mode === "auto" || mode === "montage");
+}));
+$("useTest").addEventListener("click", () => { $("fUrl").value = "test"; if (!$("fTitre").value) $("fTitre").value = "Il saute du pont en voiture"; });
+
+// ---- clé d'accès (session par défaut, appareil si demandé)
+function store(k, v) { try { v == null ? (sessionStorage.removeItem(k), localStorage.removeItem(k)) : ($("fRemember").checked ? localStorage : sessionStorage).setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k) || sessionStorage.getItem(k) || ""; } catch (e) { return ""; } }
+$("fKey").value = load("cu_key");
+try { $("fRemember").checked = !!localStorage.getItem("cu_key"); } catch (e) {}
+
+function status(text, cls) { const s = $("status"); s.textContent = text; s.className = cls || "mut"; }
+async function gh(path, opts = {}) {
+  const key = $("fKey").value.trim();
+  return fetch(API + path, { ...opts, headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + key, ...(opts.headers || {}) } });
+}
+
+$("go").addEventListener("click", async () => {
+  const url = $("fUrl").value.trim(), key = $("fKey").value.trim();
+  if (!url) return status("Colle un lien, ou clique sur « Utiliser la vidéo de test ».", "bad");
+  if (!key) { status("Il manque la clé d'accès. Les 5 étapes pour la créer sont dans l'onglet Aide.", "bad"); return; }
+  store("cu_key", null); store("cu_key", key);
+  const inputs = { url, titre: $("fTitre").value.trim(), debut: "", fin: "", auto: "0", montage: "non",
+    mise_en_page: $("fLayout").value, style: $("fStyle").value, mention: $("fPub").checked ? "Partenariat rémunéré" : "" };
+  if (mode === "extrait") { inputs.debut = $("fDebut").value.trim(); inputs.fin = $("fFin").value.trim(); }
+  if (mode === "auto") inputs.auto = String($("fAuto").value || 4);
+  if (mode === "montage") { inputs.auto = String($("fAuto").value || 4); inputs.montage = "oui"; }
+  $("go").disabled = true;
+  const t0 = Date.now();
+  try {
+    status("Envoi de la demande…");
+    const r = await gh("/actions/workflows/clip.yml/dispatches", { method: "POST", body: JSON.stringify({ ref: "main", inputs }) });
+    if (r.status === 401) throw new Error("Clé refusée : elle est fausse ou expirée. Crée-en une nouvelle (onglet Aide).");
+    if (r.status === 403 || r.status === 404) throw new Error("La clé n'a pas le droit de lancer la fabrication. Vérifie : dépôt clip-usine sélectionné, permission Actions sur « Read and write ».");
+    if (!r.ok) throw new Error("GitHub a répondu " + r.status + ". Réessaie dans une minute.");
+    let run = null;
+    for (let i = 0; i < 12 && !run; i++) {
+      await sleep(5000);
+      const j = await (await gh("/actions/workflows/clip.yml/runs?per_page=5&event=workflow_dispatch")).json();
+      run = (j.workflow_runs || []).find((x) => new Date(x.created_at).getTime() >= t0 - 20000) || null;
+    }
+    if (!run) throw new Error("La fabrication n'a pas démarré. Réessaie.");
+    while (run.status !== "completed") {
+      const min = Math.floor((Date.now() - t0) / 60000), sec = Math.floor((Date.now() - t0) / 1000) % 60;
+      status("Fabrication en cours… " + min + " min " + String(sec).padStart(2, "0") + " s\n" + (run.status === "queued" ? "En file d'attente chez GitHub." : "Téléchargement, montage et sous-titres."));
+      await sleep(10000);
+      run = await (await gh("/actions/runs/" + run.id)).json();
+    }
+    if (run.conclusion !== "success") {
+      const s = $("status"); s.className = "bad"; s.textContent = "La fabrication a échoué (lien inaccessible, vidéo privée ou source trop longue). Envoie ce lien à Claude pour qu'il regarde : ";
+      const a = el("a", "journal de la fabrication"); a.href = run.html_url; a.target = "_blank"; a.rel = "noopener"; s.append(a);
+      return;
+    }
+    status("Clip fabriqué. Mise en ligne sur la page…");
+    for (let i = 0; i < 40; i++) {
+      const list = await loadClips();
+      if (list.some((c) => c.run === run.run_number)) { status("C'est prêt : ton clip est dans « Mes clips ».", "ok"); show("clips"); return; }
+      await sleep(8000);
+    }
+    status("Le clip est fabriqué mais tarde à s'afficher. Ouvre « Mes clips » et clique sur Actualiser dans une minute.");
+  } catch (e) { status(e.message || String(e), "bad"); }
+  finally { $("go").disabled = false; }
+});
+
+// ---- galerie
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); const t = btn.textContent; btn.textContent = "Copié"; setTimeout(() => (btn.textContent = t), 1200); }
+  catch (e) { prompt("Copie ce texte :", text); }
+}
+async function loadClips() {
+  let list = [];
+  try { list = await (await fetch("clips/index.json?t=" + Date.now(), { cache: "no-store" })).json(); } catch (e) { list = []; }
+  const g = $("gallery"); g.replaceChildren();
+  list.forEach((c) => {
+    const card = el("div", null, "clip");
+    const v = document.createElement("video"); v.controls = true; v.preload = "none"; v.playsInline = true;
+    v.poster = "clips/" + encodeURIComponent(c.id) + ".jpg"; v.src = "clips/" + encodeURIComponent(c.id) + ".mp4";
+    const when = c.created ? new Date(c.created).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+    const info = [Math.round(c.duration || 0) + " s", c.style, (c.extraits || 1) > 1 ? c.extraits + " extraits" : "", when].filter(Boolean).join(" · ");
+    const row = el("div", null, "row");
+    const dl = el("a", "Télécharger", "btn small"); dl.href = v.src; dl.download = c.id + ".mp4";
+    const pr = el("button", "Copier le prompt Claude", "small"); pr.type = "button";
+    pr.addEventListener("click", async () => {
+      try { const md = await (await fetch("clips/" + encodeURIComponent(c.id) + ".md")).text(); const m = md.match(/```\n([\s\S]*?)```/); copy(m ? m[1] : md, pr); }
+      catch (e) { pr.textContent = "Fiche indisponible"; }
+    });
+    row.append(dl, pr);
+    card.append(v, el("h3", c.title || "(sans titre)"), el("p", info), row);
+    g.append(card);
+  });
+  $("noClips").hidden = list.length > 0;
+  $("clipCount").textContent = list.length ? list.length + " clip(s) en ligne (les 30 derniers sont gardés)" : "";
+  return list;
+}
+$("reload").addEventListener("click", loadClips);
+loadClips();
+
+// ---- radar
+function link(href, text) { const a = el("a", text); if (/^https:\/\//.test(href)) a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; }
+fetch("data/radar.json?t=" + Date.now()).then((r) => r.json()).then((d) => {
+  if (!d || !d.game) return;
+  $("radarOff").hidden = true; $("radarOn").hidden = false;
+  $("radarStatus").textContent = d.game.name + " · langue " + (d.lang || "fr") + " · mis à jour le " + new Date(d.updated).toLocaleString("fr-FR");
+  (d.clips || []).forEach((c) => {
+    const tr = el("tr"), t = el("td"), act = el("td"); t.append(link(c.url, c.title || "(sans titre)"));
+    const b = el("button", "Clipper", "small"); b.type = "button"; b.addEventListener("click", () => { $("fUrl").value = c.url; show("studio"); }); act.append(b);
+    tr.append(t, el("td", c.channel), el("td", fmt(c.views), "num"), el("td", fmt(Math.round(c.per_hour)), "num"), act); $("clipRows").append(tr);
+  });
+  (d.streams || []).slice().sort((a, b) => (b.prospect - a.prospect) || (b.viewers - a.viewers)).forEach((s) => {
+    const tr = el("tr"), n = el("td"), tag = el("td"), act = el("td"); n.append(link("https://www.twitch.tv/" + encodeURIComponent(s.login), s.name));
+    tag.append(el("span", s.prospect === 2 ? "Bonne cible" : s.prospect === 1 ? "Possible" : "Hors cible", "tag" + (s.prospect === 2 ? " hot" : "")));
+    const b = el("button", "Copier le message", "small"); b.type = "button"; b.addEventListener("click", () => copy($("dm").value.replaceAll("{nom}", s.name), b)); act.append(b);
+    tr.append(n, el("td", fmt(s.viewers), "num"), el("td", s.title, "hide-s"), tag, act); $("liveRows").append(tr);
+  });
+}).catch(() => {});
+
+// ---- calculateur
+function calc() {
+  const v = +$("cViews").value || 0, r = +$("cRate").value || 0, cap = +$("cCap").value || 0, fee = (+$("cFee").value || 0) / 100, n = Math.max(1, +$("cN").value || 1);
+  let gross = v / 1000 * r; const capped = cap > 0 && gross > cap; if (capped) gross = cap;
+  $("cOut").textContent = (gross * (1 - fee) * n).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  $("cNote").textContent = (capped ? "Plafond atteint : au-delà, les vues ne rapportent plus rien sur ce clip. " : "") + "Soit " + (gross * (1 - fee)).toFixed(2) + " par clip, dans la devise de la campagne.";
+}
+["cViews", "cRate", "cCap", "cFee", "cN"].forEach((id) => $(id).addEventListener("input", calc)); calc();
+</script>
+</body>
+</html>

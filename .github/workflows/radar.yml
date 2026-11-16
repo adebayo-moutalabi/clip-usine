@@ -1,37 +1,44 @@
-name: Radar Twitch
+name: Radar Twitch (optionnel)
 
+# Ne fait rien tant que les secrets TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET ne sont pas ajoutés.
 on:
   schedule:
-    - cron: "17 * * * *"   # toutes les heures
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: radar
-  cancel-in-progress: true
+  group: publication
+  cancel-in-progress: false
 
 jobs:
   radar:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+      TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
     steps:
+      - name: Clés présentes ?
+        id: cles
+        run: |
+          if [ -n "$TWITCH_CLIENT_ID" ] && [ -n "$TWITCH_CLIENT_SECRET" ]; then echo "ok=oui" >> "$GITHUB_OUTPUT"; else echo "Pas de clés Twitch : radar ignoré."; fi
       - uses: actions/checkout@v4
+        if: steps.cles.outputs.ok == 'oui'
       - uses: actions/setup-python@v5
+        if: steps.cles.outputs.ok == 'oui'
         with:
           python-version: "3.12"
-      - name: Interroger Twitch
+      - name: Interroger Twitch et publier
+        if: steps.cles.outputs.ok == 'oui'
         env:
-          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
-          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GAME_NAMES: ${{ vars.GAME_NAMES || 'Grand Theft Auto VI,Grand Theft Auto 6' }}
           RADAR_LANG: ${{ vars.RADAR_LANG || 'fr' }}
-        run: python scripts/radar.py
-      - name: Publier les données
+          RADAR_OUT: radar.json
         run: |
-          git config user.name "radar-bot"
-          git config user.email "radar-bot@users.noreply.github.com"
-          git add docs/data/radar.json
-          git diff --cached --quiet || git commit -m "radar: mise à jour des données"
-          git push
+          curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/gh-pages/data/radar.json" -o radar.json || true
+          python scripts/radar.py
+          python scripts/publish.py --radar radar.json

@@ -4,10 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: "Lien(s) du clip ou de la VOD (Twitch, Kick, Drive...). Plusieurs liens : sépare par un espace"
+        description: "Lien(s) du clip ou de la VOD (Twitch, Kick, Drive...). Écris test pour une vidéo de démonstration"
         required: true
+        default: "test"
       titre:
-        description: "Titre incrusté en haut (6 mots max). Vide = pas de titre"
+        description: "Titre d'accroche (6 mots max). Vide = pas de titre"
         required: false
         default: ""
       debut:
@@ -19,31 +20,35 @@ on:
         required: false
         default: ""
       auto:
-        description: "VOD longue : nombre de temps forts à trouver tout seul (0 = désactivé)"
+        description: "Nombre de temps forts à trouver tout seul (0 = désactivé)"
         required: false
         default: "0"
+      montage:
+        description: "oui = réunir les temps forts dans UN seul clip avec fondus"
+        type: choice
+        options: [non, oui]
+        default: non
       mise_en_page:
-        description: "flou = vidéo entière sur fond flouté · zoom = plein écran · cam = facecam en haut"
+        description: "flou = fond flouté · zoom = plein écran · cam-xx = facecam en haut (coin hg, hd, bg, bd)"
         type: choice
-        options: [flou, zoom, cam]
+        options: [flou, zoom, cam-hg, cam-hd, cam-bg, cam-bd]
         default: flou
-      cam:
-        description: "Coin de la facecam (si mise en page cam) : hg, hd, bg, bd"
+      style:
+        description: "dynamique = zooms, mot surligné, barre · simple = sous-titres sobres · brut = aucun texte auto"
         type: choice
-        options: [hg, hd, bg, bd]
-        default: hg
+        options: [dynamique, simple, brut]
+        default: dynamique
       mention:
         description: "Mention pub affichée 4 s (ex. Partenariat rémunéré). Vide = aucune"
         required: false
         default: ""
-      sous_titres:
-        description: "Sous-titres automatiques"
-        type: choice
-        options: [oui, non]
-        default: oui
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: publication
+  cancel-in-progress: false
 
 jobs:
   clip:
@@ -58,7 +63,7 @@ jobs:
       - name: Outils
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core espeak-ng
           pip install -q -r requirements.txt
       - name: Cache du modèle de sous-titres
         uses: actions/cache@v4
@@ -72,18 +77,22 @@ jobs:
           IN_DEBUT: ${{ inputs.debut }}
           IN_FIN: ${{ inputs.fin }}
           IN_AUTO: ${{ inputs.auto }}
+          IN_MONTAGE: ${{ inputs.montage }}
           IN_LAYOUT: ${{ inputs.mise_en_page }}
-          IN_CAM: ${{ inputs.cam }}
+          IN_STYLE: ${{ inputs.style }}
           IN_MENTION: ${{ inputs.mention }}
-          IN_SUBS: ${{ inputs.sous_titres }}
         run: |
           python scripts/make_clip.py \
             --url "$IN_URL" --title "$IN_TITRE" --start "$IN_DEBUT" --end "$IN_FIN" \
-            --auto "${IN_AUTO:-0}" --layout "$IN_LAYOUT" --cam "$IN_CAM" \
-            --mention "$IN_MENTION" --subs "$IN_SUBS" --out out
+            --auto "${IN_AUTO:-0}" --montage "${IN_MONTAGE:-non}" --layout "${IN_LAYOUT:-flou}" \
+            --style "${IN_STYLE:-dynamique}" --mention "$IN_MENTION" --out out
       - name: Clips à télécharger
         uses: actions/upload-artifact@v4
         with:
           name: clips-${{ github.run_number }}
           path: out/
           retention-days: 7
+      - name: Publier sur le site
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/publish.py --clips out
